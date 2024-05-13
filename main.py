@@ -7,7 +7,12 @@ from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 from architectures import sMLP, MLP, HyperNetwork
 
-import matplotlib.pyplot as plt
+from nfn import layers
+from nfn.common import network_spec_from_wsfeat
+from nfn.common import state_dict_to_tensors, WeightSpaceFeatures, network_spec_from_wsfeat
+from nfn.layers import NPLinear, HNPPool, TupleOp
+from torch.utils.data import default_collate
+
 
 
 transform = transforms.Compose([transforms.ToTensor()])
@@ -88,28 +93,28 @@ new_model = sMLP(32,64, 1)
 
 writer = SummaryWriter('runs/hypernetwork_experiment')
 
-epochs = 4000
-for epoch in range(epochs):
-    hyper_optimizer.zero_grad()
-    predicted_weights = hypernet(model_weights_input)
-    outputs = new_model(coords, predicted_weights)
-    loss = F.mse_loss(outputs.squeeze(), intensities)
-    loss.backward()
+#epochs = 4000
+#for epoch in range(epochs):
+#    hyper_optimizer.zero_grad()
+#    predicted_weights = hypernet(model_weights_input)
+#    outputs = new_model(coords, predicted_weights)
+#    loss = F.mse_loss(outputs.squeeze(), intensities)
+#    loss.backward()#
+#
+#    hyper_optimizer.step()
+#    if epoch % 50 == 0:
+#        print(f"Epoch {epoch}, Loss: {loss.item()}")
 
-    hyper_optimizer.step()
-    if epoch % 50 == 0:
-        print(f"Epoch {epoch}, Loss: {loss.item()}")
+#outputs = new_model(coords, predicted_weights)
+#predicted_image = outputs.view(28, 56).detach().numpy()
 
-outputs = new_model(coords, predicted_weights)
-predicted_image = outputs.view(28, 56).detach().numpy()
-
-fig, axes = plt.subplots(nrows=2,figsize=(8,4))
-axes[0].imshow(predicted_image, cmap='gray')
-axes[0].set_title("predicted")
-axes[1].imshow(concat_image[0], cmap="gray")
-axes[1].set_title("original")
-fig.tight_layout()
-plt.show()
+#fig, axes = plt.subplots(nrows=2,figsize=(8,4))
+#axes[0].imshow(predicted_image, cmap='gray')
+#axes[0].set_title("predicted")
+#axes[1].imshow(concat_image[0], cmap="gray")
+#axes[1].set_title("original")
+#fig.tight_layout()
+#plt.show()
 
 def load_weights_and_predict(model_path, coords):
     model = sMLP(32,64, 1) 
@@ -144,3 +149,24 @@ originals = [first_image[0], second_image[0]]
 #fig.tight_layout()
 #plt.show()
 
+def test_nfn():
+    model = MLP()
+    sd = model.state_dict()
+    wts_and_bs = state_dict_to_tensors(sd)
+    wts_and_bs = default_collate([wts_and_bs])
+    wsfeat = WeightSpaceFeatures(*wts_and_bs)
+    network_spec = network_spec_from_wsfeat(wsfeat)
+    nfn_channels = 32
+
+    nfn = nn.Sequential(
+    layers.NPLinear(network_spec, 1, nfn_channels, io_embed=True),
+    layers.TupleOp(nn.ReLU()),
+    layers.NPLinear(network_spec, nfn_channels, nfn_channels, io_embed=True),
+    layers.TupleOp(nn.ReLU()),
+    layers.HNPPool(network_spec),  # pooling layer, for invariance
+    nn.Flatten(start_dim=-2),
+    nn.Linear(nfn_channels * layers.HNPPool.get_num_outs(network_spec), 1)
+    )
+
+    return nfn(wsfeat)
+print(test_nfn())

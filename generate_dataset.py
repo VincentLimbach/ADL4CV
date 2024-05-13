@@ -50,19 +50,19 @@ transform = transforms.Compose([transforms.ToTensor()])
 train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
 
 losses = []
-for i in range(2000):
+for i in range(5):
     print(f"INR_{i}.pth")
     final_loss = train_inr(train_dataset[i][0], f"INR_{i}.pth")
-    losses.append(final_loss)
+    losses.append(final_loss.item())
 
 print(losses)
-np.savetxt(losses)
+np.savetxt("losses.txt",losses)
 
-model_paths = ['./data/INRs/INR_1.pth', './data/INRs/INR_2.pth']
+model_paths = ['./data/INRs/INR_0.pth', './data/INRs/INR_1.pth']
 titles = ['Predicted Image from Model 1', 'Predicted Image from Model 2']
 coords = [[i, j] for i in range(28) for j in range(28)]
 coords = torch.tensor(coords, dtype=torch.float32)
-originals = [train_dataset[0][0][0], train_dataset[1][0]][0]
+originals = [train_dataset[0][0][0], train_dataset[1][0][0]]
 
 
 def load_weights_and_predict(model_path, coords):

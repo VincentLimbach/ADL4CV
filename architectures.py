@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from nfn import layers
+from nfn.common import network_spec_from_wsfeat
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model=16):
@@ -121,6 +123,11 @@ class HyperNetwork(nn.Module):
         x = self.conv3(x)
 
         return x.squeeze()
+
+#class HypernetNFN(nn.Module):
+#    def __init__(self, input_dim, num_kernels=256, kernel_width=2, stride=2):
+#        super(HyperNetwork, self).__init__()
+
 
 #input_dim = 10
 #x = torch.randn(input_dim) 
