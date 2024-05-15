@@ -34,9 +34,7 @@ class MLP(nn.Module):
         
         self.linear2 = nn.Linear(32, 64)
         self.relu2 = nn.ReLU()
-        self.linear3 = nn.Linear(64, 64)
-        self.relu3 = nn.ReLU()
-        self.linear4 = nn.Linear(64, 1)
+        self.linear3 = nn.Linear(64, 1)
         
         self.positional = positional
 
@@ -50,8 +48,6 @@ class MLP(nn.Module):
         x = self.linear2(x)
         x = self.relu2(x)
         x = self.linear3(x)
-        x = self.relu3(x)
-        x = self.linear4(x)
         return x
 
 class sMLP(nn.Module):
@@ -124,9 +120,32 @@ class HyperNetwork(nn.Module):
 
         return x.squeeze()
 
-#class HypernetNFN(nn.Module):
-#    def __init__(self, input_dim, num_kernels=256, kernel_width=2, stride=2):
-#        super(HyperNetwork, self).__init__()
+class HypernetNFN(nn.Module):
+    def __init__(self, network_spec, nfn_channels = 32, input_channels=1):
+        super(HypernetNFN, self).__init__()
+        self.network_spec = network_spec
+        self.nfn_channels = nfn_channels
+        self.input_channels = input_channels
+
+        self.NP1 = layers.NPLinear(network_spec, self.input_channels, nfn_channels, io_embed=True)
+        self.relu1 = layers.TupleOp(nn.ReLU())
+        self.NP2 = layers.NPLinear(network_spec, nfn_channels, 1, io_embed=True)
+        self.relu2 = layers.TupleOp(nn.ReLU())
+        self.pool = layers.HNPPool(network_spec)
+        self.flatten = nn.Flatten(start_dim=-2)
+        self.fc = nn.Linear(nfn_channels * layers.HNPPool.get_num_outs(network_spec), 1)
+
+    def forward(self, x):
+        x = self.NP1(x)
+        x = self.relu1(x)
+        x = self.NP2(x)
+        x = self.relu2(x)
+        #x = self.pool(x)
+        #x = self.flatten(x)
+        #x = self.fc(x)
+
+        return x
+
 
 
 #input_dim = 10
