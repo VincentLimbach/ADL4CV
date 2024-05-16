@@ -78,12 +78,9 @@ class sMLP(nn.Module):
         for i, (linear, activation) in enumerate(zip(self.layers, self.activations)):
             if external_parameters is not None:
                 # Extract the weights and biases for this layer
-                weight_size = linear.weight.size(0) * linear.weight.size(1)
-                bias_size = linear.bias.size(0)
 
-                weight = external_parameters[param_index:param_index + weight_size].view_as(linear.weight)
-                bias = external_parameters[param_index + weight_size:param_index + weight_size + bias_size].view_as(linear.bias)
-                param_index += weight_size + bias_size
+                weight = external_parameters[f"layers.{i}.weight"]
+                bias = external_parameters[f"layers.{i}.bias"]
 
                 x = F.linear(x, weight, bias)
             else:
@@ -129,8 +126,10 @@ class HypernetNFN(nn.Module):
 
         self.NP1 = layers.NPLinear(network_spec, self.input_channels, nfn_channels, io_embed=True)
         self.relu1 = layers.TupleOp(nn.ReLU())
-        self.NP2 = layers.NPLinear(network_spec, nfn_channels, 1, io_embed=True)
+        self.NP2 = layers.NPLinear(network_spec, nfn_channels, nfn_channels, io_embed=True)
         self.relu2 = layers.TupleOp(nn.ReLU())
+        self.NP3 = layers.NPLinear(network_spec, nfn_channels, 1, io_embed=True)
+
         self.pool = layers.HNPPool(network_spec)
         self.flatten = nn.Flatten(start_dim=-2)
         self.fc = nn.Linear(nfn_channels * layers.HNPPool.get_num_outs(network_spec), 1)
@@ -140,6 +139,7 @@ class HypernetNFN(nn.Module):
         x = self.relu1(x)
         x = self.NP2(x)
         x = self.relu2(x)
+        x = self.NP3(x)
         #x = self.pool(x)
         #x = self.flatten(x)
         #x = self.fc(x)

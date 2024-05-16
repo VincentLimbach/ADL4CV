@@ -30,8 +30,8 @@ def train_smaller_models(image, model_save_name, helper=0):
     coords = torch.tensor(coords, dtype=torch.float32)
     intensities = torch.tensor(intensities, dtype=torch.float32)
 
-    #model = sMLP(32,64, 1)
-    model = MLP()
+    model = sMLP(32,64, 1)
+    #model = MLP()
 
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -81,10 +81,6 @@ concat_image = torch.cat([first_image, second_image], dim=2)
 
 #train_smaller_models(concat_image, 'model_3.pth', 2)
 
-model_weights_input = extract_and_concat_weights(['model_1.pth', 'model_2.pth']) #, concat=False)
-hypernet = HyperNetwork(input_dim=model_weights_input.numel())
-hyper_optimizer = optim.Adam(hypernet.parameters(), lr=0.0001)
-
 coords = [[i, j] for i in range(28) for j in range(56)]
 coords = torch.tensor(coords, dtype=torch.float32)
 intensities = concat_image.view(-1).float() 
@@ -108,13 +104,6 @@ writer = SummaryWriter('runs/hypernetwork_experiment')
 #outputs = new_model(coords, predicted_weights)
 #predicted_image = outputs.view(28, 56).detach().numpy()
 
-#fig, axes = plt.subplots(nrows=2,figsize=(8,4))
-#axes[0].imshow(predicted_image, cmap='gray')
-#axes[0].set_title("predicted")
-#axes[1].imshow(concat_image[0], cmap="gray")
-#axes[1].set_title("original")
-#fig.tight_layout()
-#plt.show()
 
 def load_weights_and_predict(model_path, coords):
     model = sMLP(32,64, 1) 
@@ -151,20 +140,40 @@ originals = [first_image[0], second_image[0]]
 
 model_paths_MLP = ["MLP_1.pth", "MLP_2.pth"]
 
+def state_dict_to_tensors_positional(state_dict):
+    """Converts a state dict into two lists of equal length:
+    1. list of weight tensors
+    2. list of biases, or None if no bias
+    Assumes the state_dict key order is [0.weight, 0.bias, 1.weight, 1.bias, ...]
+    """
+    weights, biases = [], []
+    keys = list(state_dict.keys())
+    i = 1
+    while i < len(keys):
+        weights.append(state_dict[keys[i]][None])
+        i += 1
+        assert keys[i].endswith("bias")
+        biases.append(state_dict[keys[i]][None])
+        i += 1
+    return weights, biases
+
+
 def extract_wsfeat(model_paths):
     models = []
     for path in model_paths:
-        model = MLP()
-        model.state_dict(torch.load(path))
+        model = sMLP(32,64,1)
+        model.load_state_dict(torch.load(path))
         models.append(model)
 
     state_dicts = [m.state_dict() for m in models] #extract model params
-    wts_and_bs = [state_dict_to_tensors(sd) for sd in state_dicts] #dict -> tensors
+
+    wts_and_bs = [state_dict_to_tensors_positional(sd) for sd in state_dicts] #dict -> tensors
     wts_and_bs = default_collate(wts_and_bs) #process
 
     weights, biases = wts_and_bs
     weights_mod = []
     biases_mod = []
+
     for i in range(len(weights)): #input shape: [2,1,weights.shape] -> output shape: [1,2,weights.shape] 
         weights_mod.append(torch.unsqueeze(torch.cat([weights[i][j] for j in range(len(models))]), dim=0))
         biases_mod.append(torch.unsqueeze(torch.cat([biases[i][j] for j in range(len(models))]), dim=0))
@@ -174,30 +183,30 @@ def extract_wsfeat(model_paths):
 
     return wsfeat
 
+
 #train_smaller_models(first_image, 'MLP_1.pth')
 #train_smaller_models(second_image, 'MLP_2.pth')
 
 def test_nfn():
-    wsfeat = extract_wsfeat(model_paths_MLP)
+    wsfeat = extract_wsfeat(model_paths)
     network_spec = network_spec_from_wsfeat(wsfeat)
     nfn_channels = 32
 
     hypernet = HypernetNFN(network_spec, nfn_channels, input_channels=2)
     hyper_optimizer = optim.Adam(hypernet.parameters(), lr=0.0001)
-    new_model = MLP()
+    new_model = sMLP(32,64,1)
 
     out = hypernet(wsfeat)
 
-    updated_state_dict = params_to_state_dicts(["linear1.weight", "linear1.bias", "linear2.weight", "linear2.bias", "linear3.weight", "linear3.bias"],out)[0]
-    new_model.load_state_dict(updated_state_dict)
+    #updated_state_dict = params_to_state_dicts(["linear1.weight", "linear1.bias", "linear2.weight", "linear2.bias", "linear3.weight", "linear3.bias"],out)[0]
+    #new_model.load_state_dict(updated_state_dict)
 
-    epochs = 2000
+    epochs = 5000
     for epoch in range(epochs):
         hyper_optimizer.zero_grad()
         predicted_weights = hypernet(wsfeat)
-        updated_state_dict = params_to_state_dicts(["linear1.weight", "linear1.bias", "linear2.weight", "linear2.bias", "linear3.weight", "linear3.bias"], predicted_weights)[0]
-        new_model.load_state_dict(updated_state_dict)
-        outputs = new_model(coords)
+        updated_state_dict = params_to_state_dicts(["layers.0.weight", "layers.0.bias", "layers.1.weight", "layers.1.bias"], predicted_weights)[0]
+        outputs = new_model(coords, updated_state_dict)
         loss = F.mse_loss(outputs.squeeze(), intensities)
         loss.backward()
     
@@ -205,5 +214,18 @@ def test_nfn():
         if epoch % 50 == 0:
             print(f"Epoch {epoch}, Loss: {loss.item()}")
 
-    return out
-test_nfn()
+    return updated_state_dict
+
+predicted_nfn = test_nfn()
+
+new_model = sMLP(32,64,1)
+outputs = new_model(coords, predicted_nfn)
+predicted_image = outputs.view(28, 56).detach().numpy()
+
+fig, axes = plt.subplots(nrows=2,figsize=(8,4))
+axes[0].imshow(predicted_image, cmap='gray')
+axes[0].set_title("predicted")
+axes[1].imshow(concat_image[0], cmap="gray")
+axes[1].set_title("original")
+fig.tight_layout()
+plt.show()
