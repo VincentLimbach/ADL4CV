@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from architectures import sMLP
 from INRTrainer import INRTrainer
+from utils import flatten_model_weights
 
 class ImageINRDataset(Dataset):
     def __init__(self, dataset_name, model_cls, arg_dict, trainer, on_the_fly=False):
@@ -21,8 +22,8 @@ class ImageINRDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def __getitem__(self, index):
-        img, label = self.dataset[index]
+    def __getitem__(self, index, flat_weights=True):
+        img, _ = self.dataset[index]
 
         model_path = self.trainer.model_save_dir / f"sMLP_{index}.pth"
         if model_path.exists():
@@ -36,7 +37,10 @@ class ImageINRDataset(Dataset):
             else:
                 raise Exception(f"Model for index {index} not found and on_the_fly is set to False.")
 
-        return img, model
+        if flat_weights:
+            return img, flatten_model_weights(model)
+        else:
+            return img, model
 
 def main():
     arg_dict = {
@@ -58,6 +62,3 @@ def main():
             print(f"Successfully retrieved model for index {index}")
         except Exception as e:
             print(e)
-
-if __name__ == "__main__":
-    main()

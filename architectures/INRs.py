@@ -28,6 +28,24 @@ class LearnableFourierEncoding(nn.Module):
         encoded_input = torch.cat((enc_x, enc_y), dim=-1)
         return encoded_input
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model=16):
+        super(PositionalEncoding, self).__init__()
+        self.d_model = d_model
+        self.frequency = torch.exp(torch.linspace(0, -math.log(10000.0), d_model // 2))
+        #self.register_buffer('frequency', frequency)
+
+    def forward(self, x):
+        batch_size, _ = x.shape
+
+        x_enc = x[:, :1] * self.frequency * math.pi
+        y_enc = x[:, 1:] * self.frequency * math.pi
+        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
+
+        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
+        return encoded_input
+
 class INR(ABC, nn.Module):
     def __init__(self, seed, arg_dict):
         super(INR, self).__init__()
@@ -54,7 +72,7 @@ class sMLP(INR):
         input_features = self.input_feature_dim
 
         if self.positional:
-            self.positional_encoding = LearnableFourierEncoding(d_model=d_model)
+            self.positional_encoding = PositionalEncoding(d_model=d_model)
             input_features = d_model * 2
 
         self.layers = nn.ModuleList()
