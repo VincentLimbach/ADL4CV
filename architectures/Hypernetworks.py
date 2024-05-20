@@ -1,16 +1,93 @@
+import json 
 import torch
 import torch.nn as nn
+
 from nfn import layers
 from nfn.common import network_spec_from_wsfeat
+from architectures import Autoencoder
 
-class HyperNetworkMLP(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(HyperNetworkMLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
+class MergedHyperNetwork(nn.Module):
+    def __init__(self):
+        super(MergedHyperNetwork, self).__init__()
+        with open("config.json") as file:
+            self.hypernetwork_config = json.load(file)["Hypernetwork_config"]
+
+        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 256)
         self.relu1 = nn.ReLU()
         self.fc2 = nn.Linear(256, 256)
         self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(256, output_dim, bias=False)
+
+        self.autoencoder = Autoencoder.Autoencoder()
+        self.autoencoder.load_state_dict(torch.load("models/autoencoder/autoencoder.pth"))
+        self.autoencoder.eval()
+
+        self.fc3 = nn.Linear(512, 512)  # 256 (fc2) + 256 (latent representation) = 512
+        self.relu3 = nn.ReLU()
+        self.fc4 = nn.Linear(512, self.hypernetwork_config["output_dim"])
+
+    def forward(self, x):
+        # Pass through MLP part
+        x_mlp = self.relu1(self.fc1(x))
+        x_mlp = self.relu2(self.fc2(x_mlp))
+        
+        # Get latent representations
+        half_size = x.size(1) // 2
+        x1 = x[:, :half_size]
+        x2 = x[:, half_size:]
+        
+        with torch.no_grad():
+            latent1 = self.autoencoder.encoder(x1)
+            latent2 = self.autoencoder.encoder(x2)
+        
+        # Concatenate the latent representations with MLP output
+        latent_concat = torch.cat((latent1, latent2), dim=1)
+        combined = torch.cat((x_mlp, latent_concat), dim=1)
+        
+        # Pass through final layers
+        x = self.relu3(self.fc3(combined))
+        x = self.fc4(x)
+        
+        return x
+
+class HyperNetworkIFE(nn.Module):
+    def __init__(self):
+        super(HyperNetworkIFE, self).__init__()
+        with open("config.json") as file:
+            self.hypernetwork_config = json.load(file)["Hypernetwork_config"]
+        self.autoencoder = Autoencoder.Autoencoder()
+        self.autoencoder.load_state_dict(torch.load("models/autoencoder/autoencoder.pth"))
+        self.fc1 = nn.Linear(512, 1024)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(1024, self.hypernetwork_config["output_dim"])
+        self.relu2 = nn.ReLU()
+
+    def forward(self, x):
+        half_size = x.size(1) // 2
+        x1 = x[:, :half_size]
+        x2 = x[:, half_size:]
+        
+        latent1 = self.autoencoder.encoder(x1)
+        latent2 = self.autoencoder.encoder(x2)
+        
+        latent_concat = torch.cat((latent1, latent2), dim=1)
+        
+        x = self.relu1(self.fc1(latent_concat))
+        x = self.relu2(self.fc2(x))
+        
+        return x
+        
+
+class HyperNetworkMLP(nn.Module):
+    def __init__(self):
+        super(HyperNetworkMLP, self).__init__()
+        with open("config.json") as file:
+            self.hypernetwork_config = json.load(file)["Hypernetwork_config"]
+
+        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 256)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(256, 256)
+        self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(256, self.hypernetwork_config["output_dim"], bias=False)
         print(sum(p.numel() for p in self.parameters()))
 
     def forward(self, x):

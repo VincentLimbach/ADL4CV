@@ -13,8 +13,6 @@ from nfn.common import state_dict_to_tensors, WeightSpaceFeatures, network_spec_
 from nfn.layers import NPLinear, HNPPool, TupleOp
 from torch.utils.data import default_collate
 
-
-
 transform = transforms.Compose([transforms.ToTensor()])
 train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
 

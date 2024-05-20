@@ -1,0 +1,22 @@
+{"INR_model_config":
+    {
+        "input_feature_dim": 2,
+        "output_feature_dim": 1,
+        "hidden_features": 64,
+        "layers": 2,
+        "positional": true,
+        "d_model": 16
+    },
+    "INR_trainer_config":{
+        "lr":0.001,
+        "epochs": 5000
+    },
+"INR_dataset_config":{
+
+},
+"Hypernetwork_config":{
+    "input_dim" : 4354,
+    "output_dim" : 2177
+}
+
+}

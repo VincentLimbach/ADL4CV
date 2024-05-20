@@ -1,61 +1,53 @@
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import random
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from architectures import sMLP, HyperNetworkMLP
+
+from architectures import HyperNetworkMLP, HyperNetworkIFE, sMLP
+from data_access import *
 from INRTrainer import INRTrainer
-from ImageINRDataset import ImageINRDataset
-import numpy as np
-import matplotlib.pyplot as plt
-import random
-import os
-import time
-from utils import flatten_model_weights, unflatten_weights
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
+from utils import *
 
-def process_predictions(predictions):
-    return predictions
-    """height, width = predictions.shape
-    
-    processed_predictions = np.copy(predictions)
-    
-    for i in range(height):
-        for j in range(width):
-            current_value = predictions[i, j]
-            has_valid_neighbor = False
-            
-            for di in [-1, 0, 1]:
-                for dj in [-1, 0, 1]:
-                    if di == 0 and dj == 0:
-                        continue
-                    
-                    ni, nj = i + di, j + dj
-                    
-                    if 0 <= ni < height and 0 <= nj < width:
-                        neighbor_value = predictions[ni, nj]
-                        
-                        if abs(current_value - neighbor_value) <= 0.2 or current_value>=0.3:
-                            has_valid_neighbor = True
-                            break
-                if has_valid_neighbor:
-                    break
-            
-            if not has_valid_neighbor:
-                processed_predictions[i, j] = 0
-    
-    return processed_predictions"""
+class PairedDataset(Dataset):
+    def __init__(self, dataset, index_pairs):
+        self.dataset = dataset
+        self.index_pairs = index_pairs
+        self._cache = {}
 
+    def _get_item_from_cache(self, index):
+        if index not in self._cache:
+            img, flat_weights = self.dataset[index]
+            self._cache[index] = (img, flat_weights)
+        return self._cache[index]
 
+    def __len__(self):
+        return len(self.index_pairs)
+
+    def __getitem__(self, idx):
+        index_1, index_2 = self.index_pairs[idx]
+        img_1, flat_weights_1 = self._get_item_from_cache(index_1)
+        img_2, flat_weights_2 = self._get_item_from_cache(index_2)
+        return img_1, flat_weights_1, img_2, flat_weights_2
 
 class HyperNetworkTrainer:
-    def __init__(self, hypernetwork, base_model_cls, arg_dict, trainer, save_path, load=False, override=False):
+    def __init__(self, hypernetwork, base_model_cls, inr_trainer, save_path, load=False, override=False):
+        with open("config.json") as file:
+            self.INR_model_config = json.load(file)["INR_model_config"]
+        
+        self.inr_trainer = inr_trainer
         self.hypernetwork = hypernetwork
         self.base_model_cls = base_model_cls
-        self.arg_dict = arg_dict
-        self.trainer = trainer
         self.save_path = save_path
         self.load = load
         self.writer = SummaryWriter('runs/hypernetwork_experiment')
+
         self.image_cache = {}
         self.dataset_cache = {}
         if load:
@@ -67,77 +59,41 @@ class HyperNetworkTrainer:
         elif not override and os.path.exists(self.save_path):
             raise FileExistsError(f"Model already exists at {self.save_path}. Use override=True to overwrite it.")
 
-    def process_batch(self, dataset, index_1, index_2, criterion, epoch, debug=False):
-        start_time = time.time()
-
-        if index_1 in self.dataset_cache:
-            img_1, model_1 = self.dataset_cache[index_1]
-        else:
-            img_1, model_1 = dataset[index_1]
-            self.dataset_cache[index_1] = (img_1, model_1)
-        if index_2 in self.dataset_cache:
-            img_2, model_2 = self.dataset_cache[index_2]
-        else:
-            img_2, model_2 = dataset[index_2]
-            self.dataset_cache[index_2] = (img_2, model_2)
-
-        flat_weights_1 = self.flatten_model_weights(model_1)
-        flat_weights_2 = self.flatten_model_weights(model_2)
-
-        concatenated_weights = torch.cat((flat_weights_1, flat_weights_2))
+    def process_batch(self, batch, criterion, epoch, debug=False):
+        img_1_batch, flat_weights_1_batch, img_2_batch, flat_weights_2_batch = batch
+        concatenated_weights = torch.cat((flat_weights_1_batch, flat_weights_2_batch), dim=1)
         concatenated_weights += torch.randn_like(concatenated_weights) * 0.05
 
-        if debug:
-            print(f"[DEBUG] Weights concatenated in {time.time() - start_time:.4f} seconds")
-
-        start_time = time.time()
         predicted_weights = self.hypernetwork(concatenated_weights)
-        if debug:
-            print(f"[DEBUG] Weights predicted in {time.time() - start_time:.4f} seconds")
 
-        start_time = time.time()
-        new_model = self.base_model_cls(seed=42, arg_dict=self.arg_dict)
-        external_parameters = self.unflatten_weights(predicted_weights, new_model)
-        if debug:
-            print(f"[DEBUG] Model parameters reshaped in {time.time() - start_time:.4f} seconds")
+        losses = []
+        for i in range(len(img_1_batch)):
+            new_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
+            external_parameters = unflatten_weights(predicted_weights[i], new_model)
 
-        cache_key = (index_1, index_2)
-        if cache_key in self.image_cache:
-            img_concat, coords, intensities = self.image_cache[cache_key]
-            if debug:
-                print(f"[DEBUG] Images loaded from cache in {time.time() - start_time:.4f} seconds")
-        else:
-            start_time = time.time()
-            img_concat = torch.cat((img_1, img_2), dim=2)
+            img_concat = torch.cat((img_1_batch[i], img_2_batch[i]), dim=2)
             height, width = img_concat.shape[1], img_concat.shape[2]
-            coords = [[i, j] for i in range(height) for j in range(width)]
+            coords = [[x, y] for x in range(height) for y in range(width)]
             coords = torch.tensor(coords, dtype=torch.float32)
-            intensities = [img_concat[:, i, j].item() for i in range(height) for j in range(width)]
+            intensities = [img_concat[:, x, y].item() for x in range(height) for y in range(width)]
             intensities = torch.tensor(intensities, dtype=torch.float32)
 
-            self.image_cache[cache_key] = (img_concat, coords, intensities)
+            predictions = new_model(coords, external_parameters=external_parameters)
+            loss = criterion(predictions.squeeze(), intensities)
+            losses.append(loss)
 
-            if debug:
-                print(f"[DEBUG] Images concatenated in {time.time() - start_time:.4f} seconds")
+        batch_loss = torch.stack(losses).mean()
+        return batch_loss
 
-        start_time = time.time()
-        predictions = new_model(coords, external_parameters=external_parameters)
-        loss = criterion(predictions.squeeze(), intensities)
-
-        if debug:
-            print(f"[DEBUG] Loss computed in {time.time() - start_time:.4f} seconds")
-
-        return loss, img_concat, predictions
-
-    def train_one_epoch(self, dataset, index_pairs, criterion, optimizer, epoch, debug=False):
+    def train_one_epoch(self, dataloader, criterion, optimizer, epoch, debug=False):
         self.hypernetwork.train()
         total_loss = 0.0
 
-        for index_1, index_2 in index_pairs:
+        for batch in dataloader:
             optimizer.zero_grad()
-            loss, _, _ = self.process_batch(dataset, index_1, index_2, criterion, epoch, debug=debug)
-            total_loss += loss
-            loss.backward()
+            batch_loss = self.process_batch(batch, criterion, epoch, debug=debug)
+            total_loss += batch_loss
+            batch_loss.backward()
 
             for name, param in self.hypernetwork.named_parameters():
                 if param.grad is not None:
@@ -145,43 +101,46 @@ class HyperNetworkTrainer:
 
             optimizer.step()
 
-        total_loss /= len(index_pairs)
+        total_loss /= len(dataloader)
         return total_loss
 
-    def validate(self, dataset, index_pairs, criterion, epoch, debug):
+    def validate(self, dataloader, criterion, epoch, debug):
         self.hypernetwork.eval()
         total_loss = 0.0
 
         with torch.no_grad():
-            for index_1, index_2 in index_pairs:
-                loss, _, _ = self.process_batch(dataset, index_1, index_2, criterion, epoch, debug=debug)
-                total_loss += loss
+            for batch in dataloader:
+                batch_loss = self.process_batch(batch, criterion, epoch, debug=debug)
+                total_loss += batch_loss
 
-        total_loss /= len(index_pairs)
+        total_loss /= len(dataloader)
         return total_loss
 
-    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False):
-        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.arg_dict, self.trainer, on_the_fly)
+    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=32):
+        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly)
+        train_dataset = PairedDataset(dataset, train_pairs)
+        val_dataset = PairedDataset(dataset, val_pairs)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
         criterion = nn.MSELoss()
         if not self.load:
             optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.0003, weight_decay=1e-6)
-            epochs = 150
+            epochs = 51
 
             for epoch in range(epochs):
                 if (epoch + 1) % 10 == 0 or epoch == 0:
-                    epoch_debug=debug
+                    epoch_debug = debug
                 else:
-                    epoch_debug=False
+                    epoch_debug = False
 
                 if epoch_debug:
                     print(f"[DEBUG] Starting epoch {epoch + 1}")
 
                 start_time = time.time()
-                train_loss = self.train_one_epoch(dataset, train_pairs, criterion, optimizer, epoch, debug=epoch_debug)
-                val_loss = self.validate(dataset, val_pairs, criterion, epoch, debug=epoch_debug)
-                
-                #self.writer.add_scalar('Loss/train', {'train': train_loss.item()}, epoch)
-                #self.writer.add_scalar('Loss/val', val_loss.item(), epoch)
+                train_loss = self.train_one_epoch(train_loader, criterion, optimizer, epoch, debug=epoch_debug)
+                val_loss = self.validate(val_loader, criterion, epoch, debug=epoch_debug)
 
                 self.writer.add_scalars('Loss', {'train': train_loss.item(), 'val': val_loss.item()}, epoch)
 
@@ -194,41 +153,48 @@ class HyperNetworkTrainer:
 
         results = []
         for index_1, index_2 in val_pairs:
-            _, img_concat, predictions = self.process_batch(dataset, index_1, index_2, criterion, 10000)
-            predictions = predictions.detach().numpy().reshape((img_concat.shape[1], img_concat.shape[2]))
-            
-            predictions = process_predictions(predictions)
+            img_1, flat_weights_1 = dataset[index_1]
+            img_2, flat_weights_2 = dataset[index_2]
+
+            concatenated_weights = torch.cat((flat_weights_1, flat_weights_2))
+            concatenated_weights += torch.randn_like(concatenated_weights) * 0.05
+
+            predicted_weights = self.hypernetwork(concatenated_weights.unsqueeze(0)).squeeze(0)
+
+            new_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
+            external_parameters = unflatten_weights(predicted_weights, new_model)
+
+            img_concat = torch.cat((img_1, img_2), dim=2)
+            height, width = img_concat.shape[1], img_concat.shape[2]
+            coords = [[x, y] for x in range(height) for y in range(width)]
+            coords = torch.tensor(coords, dtype=torch.float32)
+            intensities = [img_concat[:, x, y].item() for x in range(height) for y in range(width)]
+            intensities = torch.tensor(intensities, dtype=torch.float32)
+
+            predictions = new_model(coords, external_parameters=external_parameters).detach().numpy().reshape((height, width))
+
             predictions = np.clip(predictions, 0, 1)
             results.append((img_concat, predictions))
 
         return results
 
 def main():
-    arg_dict = {
-        'input_feature_dim': 2,
-        'output_feature_dim': 1,
-        'hidden_features': 64,
-        'layers': 2,
-        'positional': True,
-        'd_model': 16
-    }
+    with open("./config.json", "r") as json_file:
+        json_file = json.load(json_file)
+        INR_model_config = json_file["INR_model_config"]
+        INR_dataset_config = json_file["INR_dataset_config"]
+    
+    inr_trainer = INRTrainer()
+    hypernetwork = HyperNetworkMLP()
 
-    trainer = INRTrainer(subdirectory='/sMLP')
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='hypernetwork_1000.pth', override=True, load=True)
 
-    input_dim = 4354
-    output_dim = 4354 // 2
-    hypernetwork = HyperNetworkMLP(input_dim=input_dim, output_dim=output_dim)
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, arg_dict, trainer, save_path='hypernetwork_debug.pth', load=True)
+    train_pairs, val_pairs = generate_pairs(1024, 64, 8)
 
-    all_pairs = [(i, j) for i in range(30) for j in range(30)]
+    train_pairs = [(1001, 58)]
+    val_pairs = [(1029, 58),(1025, 58)]
 
-    val_pairs = random.sample(all_pairs, 30)
-
-    train_pairs = [pair for pair in all_pairs if pair not in val_pairs]
-
-    val_pairs = [(35,29)]
-    #train_pairs = []
-    results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=False)
+    results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True)
 
     for img_concat, predictions in results:
         fig, ax = plt.subplots(1, 2, figsize=(10, 5))
@@ -242,6 +208,7 @@ def main():
         ax[1].axis('off')
 
         plt.show()
+
 
 if __name__ == "__main__":
     main()

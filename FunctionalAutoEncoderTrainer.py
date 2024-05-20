@@ -1,6 +1,6 @@
 from utils import flatten_model_weights, unflatten_weights, generate_coordinates
 from architectures import sMLP, Autoencoder
-from ImageINRDataset import ImageINRDataset
+from data_access import *
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,11 +11,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class FunctionalAutoencoderTrainer:
-    def __init__(self, autoencoder, dataset, base_model_cls=sMLP, arg_dict=None, batch_size=32, lr=0.001, epochs=50, save_dir="models/autoencoder/"):
+    def __init__(self, autoencoder, dataset, base_model_cls=sMLP, INR_model_config=None, batch_size=32, lr=0.001, epochs=200, save_dir="models/autoencoder/"):
         self.autoencoder = autoencoder
         self.dataset = dataset
         self.base_model_cls = base_model_cls
-        self.arg_dict = arg_dict if arg_dict is not None else {}
+        self.INR_model_config = INR_model_config if INR_model_config is not None else {}
         self.batch_size = batch_size
         self.lr = lr
         self.epochs = epochs
@@ -51,11 +51,11 @@ class FunctionalAutoencoderTrainer:
         for img, original_weight, predicted_weight in zip(images, original_weights, predicted_weights):
             coordinates = generate_coordinates(img)
 
-            original_model = self.base_model_cls(seed=42, arg_dict=self.arg_dict)
+            original_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
             original_model.load_state_dict(unflatten_weights(original_weight, original_model))
             original_preds = original_model(coordinates)
 
-            reconstructed_model = self.base_model_cls(seed=42, arg_dict=self.arg_dict)
+            reconstructed_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
             reconstructed_preds = reconstructed_model(coordinates, external_parameters=unflatten_weights(predicted_weight, reconstructed_model))
 
             loss = self.criterion(reconstructed_preds, original_preds)
@@ -106,38 +106,39 @@ class FunctionalAutoencoderTrainer:
         return total_val_loss
 
     def log_predictions(self, images, original_weights, predicted_weights, epoch):
-        fig, axs = plt.subplots(10, 2, figsize=(8, 8))
         for i in range(10):
+            fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+
             coordinates = generate_coordinates(images[i])
 
-            original_model = self.base_model_cls(seed=42, arg_dict=self.arg_dict)
+            original_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
             original_model.load_state_dict(unflatten_weights(original_weights[i], original_model))
             original_preds = original_model(coordinates).detach().cpu().numpy()
 
-            reconstructed_model = self.base_model_cls(seed=42, arg_dict=self.arg_dict)
+            reconstructed_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config)
             reconstructed_preds = reconstructed_model(coordinates, external_parameters=unflatten_weights(predicted_weights[i], reconstructed_model)).detach().cpu().numpy()
 
-            axs[i, 0].imshow(original_preds.reshape(images[i].shape[1], images[i].shape[2]), cmap='gray')
-            axs[i, 0].set_title("Original Prediction")
-            axs[i, 1].imshow(reconstructed_preds.reshape(images[i].shape[1], images[i].shape[2]), cmap='gray')
-            axs[i, 1].set_title("Reconstructed Prediction")
+            axs[0].imshow(original_preds.reshape(images[i].shape[1], images[i].shape[2]), cmap='gray')
+            axs[0].set_title("Original Prediction")
+            axs[1].imshow(reconstructed_preds.reshape(images[i].shape[1], images[i].shape[2]), cmap='gray')
+            axs[1].set_title("Reconstructed Prediction")
 
-        plt.tight_layout()
-        self.writer.add_figure(f'Predictions_epoch_{epoch}', fig)
+            plt.tight_layout()
+            self.writer.add_figure(f'Predictions_epoch_{epoch}_pair_{i}', fig)
+            plt.close(fig)
+
         print(f"Logged predictions for epoch {epoch}")
 
-arg_dict = {
-        'input_feature_dim': 2,
-        'output_feature_dim': 1,
-        'hidden_features': 64,
-        'layers': 2,
-        'positional': True,
-        'd_model': 16
-    }
+def main():
+    with open("config.json") as file:
+        INR_model_config = json.load(file)["INR_model_config"]
 
-trainer = INRTrainer(subdirectory='/sMLP')
-subset_indices = list(range(500))
-dataset = Subset(ImageINRDataset("MNIST", sMLP, arg_dict, trainer, on_the_fly=True), subset_indices)
-autoencoder = Autoencoder()
-trainer = FunctionalAutoencoderTrainer(autoencoder, dataset, sMLP, arg_dict)
-trainer.train()
+    trainer = INRTrainer()
+    subset_indices = list(range(50))
+    dataset = Subset(ImageINRDataset("MNIST", sMLP, trainer, on_the_fly=True, model_save_dir="data/INR/sMLP/"), subset_indices)
+    autoencoder = Autoencoder()
+    trainer = FunctionalAutoencoderTrainer(autoencoder, dataset, sMLP, INR_model_config)
+    trainer.train()
+
+if __name__ == "__main__":
+    main()

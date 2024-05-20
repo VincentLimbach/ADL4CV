@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
-from abc import ABC, abstractmethod
 import math 
+
+from abc import ABC, abstractmethod
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -28,7 +29,7 @@ class LearnableFourierEncoding(nn.Module):
         encoded_input = torch.cat((enc_x, enc_y), dim=-1)
         return encoded_input
 
-class PositionalEncoding(nn.Module):
+class PositionalEncodingOld(nn.Module):
     def __init__(self, d_model=16):
         super(PositionalEncoding, self).__init__()
         self.d_model = d_model
@@ -46,13 +47,39 @@ class PositionalEncoding(nn.Module):
         encoded_input = torch.cat((enc_x, enc_y), dim=-1)
         return encoded_input
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model=16):
+        super(PositionalEncoding, self).__init__()
+        self.d_model = d_model
+        self.frequency = self.generate_frequencies()
+
+    def generate_frequencies(self):
+        frequencies = torch.zeros(self.d_model // 2)
+        frequencies[0] = 0 
+        period_length = 72
+        for i in range(1, self.d_model // 2):
+            frequencies[i] = 2 * math.pi / period_length
+            period_length /= 2
+        return frequencies
+
+    def forward(self, x):
+        batch_size, _ = x.shape
+
+        x_enc = x[:, :1] * self.frequency
+        y_enc = x[:, 1:] * self.frequency
+        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
+
+        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
+        return encoded_input
+
 class INR(ABC, nn.Module):
-    def __init__(self, seed, arg_dict):
+    def __init__(self, seed, INR_model_config):
         super(INR, self).__init__()
-        self.input_feature_dim = arg_dict.get("input_feature_dim")
-        self.output_feature_dim = arg_dict.get("output_feature_dim")
+        self.input_feature_dim = INR_model_config.get("input_feature_dim")
+        self.output_feature_dim = INR_model_config.get("output_feature_dim")
         self.seed = seed
-        self.arg_dict = arg_dict
+        self.INR_model_config = INR_model_config
         
         set_seed(self.seed)
         self.build_model()
@@ -63,10 +90,10 @@ class INR(ABC, nn.Module):
 
 class sMLP(INR):
     def build_model(self):
-        hidden_features = self.arg_dict.get('hidden_features', 64)
-        layers = self.arg_dict.get('layers', 2)
-        positional = self.arg_dict.get('positional', True)
-        d_model = self.arg_dict.get('d_model', 16)
+        hidden_features = self.INR_model_config.get('hidden_features', None)
+        layers = self.INR_model_config.get('layers', None)
+        positional = self.INR_model_config.get('positional', None)
+        d_model = self.INR_model_config.get('d_model', None)
 
         self.positional = positional
         input_features = self.input_feature_dim
