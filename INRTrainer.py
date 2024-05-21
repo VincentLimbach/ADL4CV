@@ -6,9 +6,9 @@ import torch.optim as optim
 import numpy as np
 
 from torchvision import datasets, transforms
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 from architectures import INR, sMLP
-from path import Path
+#from path import Path
 
 class INRTrainer:
     def __init__(self, debug=False):
@@ -18,7 +18,7 @@ class INRTrainer:
             self.INR_model_config = json_file["INR_model_config"]
             self.INR_trainer_config = json_file["INR_trainer_config"]
 
-    def fit_inr(self, dataset, index, model_cls, seed):
+    def fit_inr(self, dataset, index, model_cls, seed, save=False, save_name=None):
         img, _ = dataset[index]
         height, width = img.shape[1], img.shape[2]
 
@@ -42,12 +42,14 @@ class INRTrainer:
 
             if self.debug and epoch % 50 == 0:
                 print(f'Epoch {epoch+1}, Loss: {loss.item()}')
+        if save:
+            torch.save(model.state_dict(), save_name)
 
         return model.state_dict()
 
     def fit_inrs(self, dataset, indices, model_cls, seed):
         models = []
         for index in indices:
-            final_model = self.fit_inr(dataset, index, model_cls, seed, save_path)
+            final_model = self.fit_inr(dataset, index, model_cls, seed, save=True, save_name=f"./data/INR/sMLP_comparison/sMLP500_{index}")
             models.append(final_model)
         return models

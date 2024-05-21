@@ -9,7 +9,7 @@
     },
     "INR_trainer_config":{
         "lr":0.001,
-        "epochs": 5000
+        "epochs": 500
     },
 "INR_dataset_config":{
 
