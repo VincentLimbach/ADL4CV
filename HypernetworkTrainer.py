@@ -116,8 +116,11 @@ class HyperNetworkTrainer:
         total_loss /= len(dataloader)
         return total_loss
 
-    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=32):
-        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly)
+    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=32, path_dic=None, path_model=None):
+        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP_comparison/", on_the_fly)
+        if path_dic is not None:
+            dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, path_dic, on_the_fly, path_model)
+
         train_dataset = PairedDataset(dataset, train_pairs)
         val_dataset = PairedDataset(dataset, val_pairs)
 
@@ -187,14 +190,17 @@ def main():
     inr_trainer = INRTrainer()
     hypernetwork = HyperNetworkMLP()
 
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='hypernetwork_1000.pth', override=True, load=True)
+    k_lst = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+    train_pairs, val_pairs = generate_pairs(100, 80, 4, seed=42)
 
-    train_pairs, val_pairs = generate_pairs(1024, 64, 8)
 
-    train_pairs = [(1001, 58)]
-    val_pairs = [(1029, 58),(1025, 58)]
 
-    results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True)
+    for k in k_lst:
+        hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path=f'hypernetwork_{k}E_reg5-1e-4.pth', override=True, load=False)
+
+        train_pairs, val_pairs = generate_pairs(100, 80, 4, seed=42)
+
+        results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True, path_dic = "data/INR/sMLP_reg/", path_model = f"sMLP_5-1e-4_{k}_")
 
     for img_concat, predictions in results:
         fig, ax = plt.subplots(1, 2, figsize=(10, 5))
@@ -208,6 +214,26 @@ def main():
         ax[1].axis('off')
 
         plt.show()
+
+    '''
+    train_pairs = [(1001, 58)]
+    val_pairs = [(1029, 58),(1025, 58)]
+
+    results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True, path = )
+
+    for img_concat, predictions in results:
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+        ax[0].imshow(img_concat.squeeze(), cmap='gray')
+        ax[0].set_title('Original Concatenated Image')
+        ax[0].axis('off')
+
+        ax[1].imshow(predictions, cmap='gray')
+        ax[1].set_title('Predicted Image')
+        ax[1].axis('off')
+
+        plt.show()
+        '''
 
 
 if __name__ == "__main__":

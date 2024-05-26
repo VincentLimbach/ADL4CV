@@ -1,9 +1,13 @@
 import random
 
-def generate_pairs(num_images, val_size, number_of_occurances):
+def generate_pairs(num_images, val_size, number_of_occurances, seed=None):
     left_images = [i for i in range(num_images) for _ in range(number_of_occurances)]
     right_images = [i for i in range(num_images) for _ in range(number_of_occurances)]
     
+    if seed is not None:
+        random.seed(seed)
+
+
     random.shuffle(left_images)
     random.shuffle(right_images)
     

@@ -13,12 +13,13 @@ from utils import flatten_model_weights
 import json
 
 class ImageINRDataset(Dataset):
-    def __init__(self, dataset_name, model_cls, trainer, model_save_dir, on_the_fly=False):
+    def __init__(self, dataset_name, model_cls, trainer, model_save_dir, on_the_fly=False, path=None):
         self.dataset_name = dataset_name
         self.model_cls = model_cls
         self.trainer = trainer
         self.on_the_fly = on_the_fly
         self.model_save_dir = model_save_dir
+        self.path = path
 
         if not os.path.exists(self.model_save_dir):
             os.makedirs(self.model_save_dir)
@@ -34,7 +35,10 @@ class ImageINRDataset(Dataset):
     def __getitem__(self, index):
         img, _ = self.dataset[index]
         #Should be dynamic based on class
-        model_path = os.path.join(self.model_save_dir, f"sMLP_{index}.pth")
+        model_path = os.path.join(self.model_save_dir, f"sMLP500_{index}.pth")
+        if self.path is not None:
+            model_path = os.path.join(self.model_save_dir, self.path + str(index) + ".pth")
+
         if os.path.exists(model_path):
             model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config)
             model.load_state_dict(torch.load(model_path))
@@ -54,7 +58,7 @@ def main():
         INR_model_config = json.load(json_file)["INR_model_config"]
 
     inr_trainer = INRTrainer(debug=True)
-    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP", on_the_fly=True)
+    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP_comparison", on_the_fly=True)
 
     for index in range(30):
         try:

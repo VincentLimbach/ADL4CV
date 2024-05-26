@@ -30,7 +30,7 @@ class INRTrainer:
         model = model_cls(seed=seed, INR_model_config=self.INR_model_config)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=self.INR_trainer_config["lr"])
+        optimizer = optim.Adam(model.parameters(), lr=self.INR_trainer_config["lr"], weight_decay=self.INR_trainer_config["weight_decay"])
 
         epochs = self.INR_trainer_config["epochs"]
         for epoch in range(epochs):
@@ -47,9 +47,10 @@ class INRTrainer:
 
         return model.state_dict()
 
-    def fit_inrs(self, dataset, indices, model_cls, seed):
+    def fit_inrs(self, dataset, indices, model_cls, seed, save_path):
         models = []
         for index in indices:
-            final_model = self.fit_inr(dataset, index, model_cls, seed, save=True, save_name=f"./data/INR/sMLP_comparison/sMLP500_{index}")
+            print(index)
+            final_model = self.fit_inr(dataset, index, model_cls, seed, save=True, save_name = save_path + str(index) + ".pth")
             models.append(final_model)
         return models

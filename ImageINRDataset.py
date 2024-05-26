@@ -25,7 +25,8 @@ class ImageINRDataset(Dataset):
     def __getitem__(self, index, flat_weights=True):
         img, _ = self.dataset[index]
 
-        model_path = self.trainer.model_save_dir / f"sMLP_{index}.pth"
+        model_path = self.trainer.model_save_dir / f"sMLP500_{index}" #f"sMLP_{index}.pth" #uncomment to use regular sMLP
+        print(model_path)
         if model_path.exists():
             model = self.model_cls(seed=42, arg_dict=self.arg_dict)
             model.load_state_dict(torch.load(model_path))
