@@ -11,6 +11,7 @@ from architectures import sMLP
 from INRTrainer import INRTrainer
 from utils import flatten_model_weights
 import json
+import time
 
 class ImageINRDataset(Dataset):
     def __init__(self, dataset_name, model_cls, trainer, model_save_dir, on_the_fly=False, path=None):
@@ -34,8 +35,7 @@ class ImageINRDataset(Dataset):
 
     def __getitem__(self, index):
         img, _ = self.dataset[index]
-        #Should be dynamic based on class
-        model_path = os.path.join(self.model_save_dir, f"sMLP500_{index}.pth")
+        model_path = os.path.join(self.model_save_dir, f"sMLP_{index}.pth")
         if self.path is not None:
             model_path = os.path.join(self.model_save_dir, self.path + str(index) + ".pth")
 
@@ -57,13 +57,13 @@ def main():
     with open("config.json") as json_file:
         INR_model_config = json.load(json_file)["INR_model_config"]
 
-    inr_trainer = INRTrainer(debug=True)
-    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP_comparison", on_the_fly=True)
+    inr_trainer = INRTrainer(debug=False)
+    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP", on_the_fly=True)
 
-    for index in range(30):
+    for index in range(2000, 4000):
         try:
             img, model = img_inr_dataset[index]
-            print(f"Successfully retrieved model for index {index}")
+            #print(f"Successfully retrieved model for index {index}")
         except Exception as e:
             print(e)
 

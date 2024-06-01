@@ -8,17 +8,22 @@ def flatten_model_weights(model):
     return torch.cat(flat_weights)
 
 def unflatten_weights(flat_weights, model):
-    external_parameters = {}
+    batch_size = flat_weights.shape[0]
+    weights, biases = [], []
+    
     offset = 0
-    for i, layer in enumerate(model.layers):
-        weight_shape = layer.weight.shape
-        bias_shape = layer.bias.shape
+    for layer in model.layers:
+        weight_shape = (batch_size, *layer.weight.shape)
+        bias_shape = (batch_size, *layer.bias.shape)
         weight_numel = layer.weight.numel()
         bias_numel = layer.bias.numel()
-
-        external_parameters[f"layers.{i}.weight"] = flat_weights[offset:offset + weight_numel].view(weight_shape)
+        
+        layer_weights = flat_weights[:, offset:offset + weight_numel].view(weight_shape)
         offset += weight_numel
-        external_parameters[f"layers.{i}.bias"] = flat_weights[offset:offset + bias_numel].view(bias_shape)
+        layer_biases = flat_weights[:, offset:offset + bias_numel].view(bias_shape)
         offset += bias_numel
+        
+        weights.append(layer_weights)
+        biases.append(layer_biases)
+    return weights, biases
 
-    return external_parameters

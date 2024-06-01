@@ -9,49 +9,14 @@ from abc import ABC, abstractmethod
 
 def set_seed(seed):
     torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-class LearnableFourierEncoding(nn.Module):
-    def __init__(self, d_model=16):
-        super(LearnableFourierEncoding, self).__init__()
-        self.d_model = d_model
-        self.freqs = nn.Parameter(torch.randn(d_model // 2))
-        self.phases = nn.Parameter(torch.zeros(d_model // 2))
-
-    def forward(self, x):
-        batch_size, _ = x.shape
-        x_enc = x[:, :1] * self.freqs * math.pi + self.phases
-        y_enc = x[:, 1:] * self.freqs * math.pi + self.phases
-        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
-        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
-        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
-        return encoded_input
-
-class PositionalEncodingOld(nn.Module):
-    def __init__(self, d_model=16):
-        super(PositionalEncoding, self).__init__()
-        self.d_model = d_model
-        self.frequency = torch.exp(torch.linspace(0, -math.log(10000.0), d_model // 2))
-        #self.register_buffer('frequency', frequency)
-
-    def forward(self, x):
-        batch_size, _ = x.shape
-
-        x_enc = x[:, :1] * self.frequency * math.pi
-        y_enc = x[:, 1:] * self.frequency * math.pi
-        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
-        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
-
-        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
-        return encoded_input
-
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model=16):
+    def __init__(self, d_model=16, device=torch.device('cpu')):
         super(PositionalEncoding, self).__init__()
         self.d_model = d_model
-        self.frequency = self.generate_frequencies()
+        self.device = device
+        self.frequency = self.generate_frequencies().to(self.device)
 
     def generate_frequencies(self):
         frequencies = torch.zeros(self.d_model // 2)
@@ -63,23 +28,23 @@ class PositionalEncoding(nn.Module):
         return frequencies
 
     def forward(self, x):
-        batch_size, _ = x.shape
-
-        x_enc = x[:, :1] * self.frequency
-        y_enc = x[:, 1:] * self.frequency
-        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
-        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
-
-        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
+        x = x.to(self.device)
+        encodings = []
+        for i in range(x.shape[1]):
+            x_enc = x[:, i:i+1] * self.frequency
+            enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+            encodings.append(enc_x)
+        encoded_input = torch.cat(encodings, dim=-1)
         return encoded_input
 
 class INR(ABC, nn.Module):
-    def __init__(self, seed, INR_model_config):
+    def __init__(self, seed, INR_model_config, device=torch.device('cpu')):
         super(INR, self).__init__()
         self.input_feature_dim = INR_model_config.get("input_feature_dim")
         self.output_feature_dim = INR_model_config.get("output_feature_dim")
         self.seed = seed
         self.INR_model_config = INR_model_config
+        self.device = device
         
         set_seed(self.seed)
         self.build_model()
@@ -99,7 +64,7 @@ class sMLP(INR):
         input_features = self.input_feature_dim
 
         if self.positional:
-            self.positional_encoding = PositionalEncoding(d_model=d_model)
+            self.positional_encoding = PositionalEncoding(d_model=d_model, device=self.device)
             input_features = d_model * 2
 
         self.layers = nn.ModuleList()
@@ -108,26 +73,28 @@ class sMLP(INR):
 
         for i in range(layers):
             next_features = hidden_features if i < layers - 1 else self.output_feature_dim
-            self.layers.append(nn.Linear(current_features, next_features))
+            self.layers.append(nn.Linear(current_features, next_features).to(self.device))
             self.layer_sizes.append((current_features * next_features + next_features))
             current_features = next_features
 
-        self.activations = nn.ModuleList([nn.LeakyReLU() for _ in range(layers)])
+        self.activations = nn.ModuleList([nn.LeakyReLU().to(self.device) for _ in range(layers)])
 
-    def forward(self, x, external_parameters=None):
+    def forward(self, x, weights=None, biases=None):
         if self.positional:
             x = self.positional_encoding(x)
-
+        
         for i, (linear, activation) in enumerate(zip(self.layers, self.activations)):
-            if external_parameters is not None:
-                weight = external_parameters[f"layers.{i}.weight"]
-                bias = external_parameters[f"layers.{i}.bias"]
-                x = F.linear(x, weight, bias)
+            if weights is not None and biases is not None:
+                weight = weights[i]
+                bias = biases[i]
+                if x.ndim == 2:
+                    x = x.unsqueeze(0).expand(weight.size(0), -1, -1)
+                x = torch.bmm(x, weight.transpose(1, 2)) + bias.unsqueeze(1)
             else:
                 x = linear(x)
             x = activation(x)
-
         return x
+
 
     def __str__(self):
         return "sMLP"

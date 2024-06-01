@@ -16,43 +16,31 @@ def generate_coordinates(img):
     coordinates = [(x, y) for x in range(w) for y in range(h)]
     return torch.tensor(coordinates, dtype=torch.float32)
 
+import torch
 
-def generate_merged_image(triples):
-    max_height = max(x_offset + img.shape[1] for img, x_offset, y_offset in triples)
-    max_width = max(y_offset + img.shape[2] for img, x_offset, y_offset in triples)
+def generate_merged_image(img_1_batch, img_2_batch, x_2_offsets, y_2_offsets):
+    device = img_1_batch.device
+    x_2_offsets = x_2_offsets.to(device)
+    y_2_offsets = y_2_offsets.to(device)
     
-    merged_img = torch.zeros((1, max_height, max_width), dtype=torch.float32)
+    batch_size, img_height, img_width = img_1_batch.shape
+    img_2_height, img_2_width = img_2_batch.shape[1], img_2_batch.shape[2]
     
-    for img, x_offset, y_offset in triples:
-        _, img_height, img_width = img.shape
-        merged_img[:, x_offset:x_offset+img_height, y_offset:y_offset+img_width] = torch.max(
-            merged_img[:, x_offset:x_offset+img_height, y_offset:y_offset+img_width], img)
+    max_height = img_height + y_2_offsets.max().item()
+    max_width = img_width + x_2_offsets.max().item()
     
-    return merged_img
+    merged_imgs = torch.zeros((batch_size, max_height, max_width), dtype=torch.float32, device=device)
+    merged_imgs[:, :img_height, :img_width] = img_1_batch
+    
+    batch_indices = torch.arange(batch_size, device=device)
+    y_indices = y_2_offsets[:, None, None] + torch.arange(img_2_height, device=device)[None, :, None]
+    x_indices = x_2_offsets[:, None, None] + torch.arange(img_2_width, device=device)[None, None, :]
+    
+    merged_imgs[batch_indices[:, None, None], y_indices, x_indices] = torch.max(
+        merged_imgs[batch_indices[:, None, None], y_indices, x_indices],
+        img_2_batch
+    )
+    
+    return merged_imgs
 
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model=16):
-        super(PositionalEncoding, self).__init__()
-        self.d_model = d_model
-        self.frequency = self.generate_frequencies()
-
-    def generate_frequencies(self):
-        frequencies = torch.zeros(self.d_model // 2)
-        frequencies[0] = 0 
-        period_length = 72
-        for i in range(1, self.d_model // 2):
-            frequencies[i] = 2 * math.pi / period_length
-            period_length /= 2
-        return frequencies
-
-    def forward(self, x):
-        batch_size, _ = x.shape
-
-        x_enc = x[:, :1] * self.frequency
-        y_enc = x[:, 1:] * self.frequency
-        enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
-        enc_y = torch.cat((torch.sin(y_enc), torch.cos(y_enc)), dim=-1)
-
-        encoded_input = torch.cat((enc_x, enc_y), dim=-1)
-        return encoded_input

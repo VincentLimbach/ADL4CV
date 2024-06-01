@@ -6,9 +6,7 @@ import torch.optim as optim
 import numpy as np
 
 from torchvision import datasets, transforms
-#from dotenv import load_dotenv
 from architectures import INR, sMLP
-#from path import Path
 
 class INRTrainer:
     def __init__(self, debug=False):
@@ -30,7 +28,7 @@ class INRTrainer:
         model = model_cls(seed=seed, INR_model_config=self.INR_model_config)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=self.INR_trainer_config["lr"], weight_decay=self.INR_trainer_config["weight_decay"])
+        optimizer = optim.Adam(model.parameters(), lr=self.INR_trainer_config["lr"], weight_decay=self.INR_trainer_config.get("weight_decay", 0))
 
         epochs = self.INR_trainer_config["epochs"]
         for epoch in range(epochs):
