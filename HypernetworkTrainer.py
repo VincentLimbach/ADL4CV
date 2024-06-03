@@ -135,6 +135,34 @@ class HyperNetworkTrainer:
         total_loss /= len(dataloader)
         return total_loss, results
 
+    def eval_permutated(self, val_pairs, criterion, debug, seed, final):
+        np.random.seed(seed)
+        dataset = ImageINRDataset("MNIST", self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly=False)
+        val_dataset = PairedDataset(dataset, val_pairs)
+        val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+        new_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config, device=device).to(device)
+        total_loss = 0
+
+        for batch in val_loader:
+            img_1_batch, flat_weights_1_batch, img_2_batch, flat_weights_2_batch = [b.to(device) for b in batch]  # Move batch data to GP
+            weights_1_unflattened = unflatten_weights(flat_weights_1_batch, new_model)
+            weights_2_unflattened = unflatten_weights(flat_weights_2_batch, new_model)
+
+            perm_params_1 = permute_params(weights_1_unflattened, 42, flatten=True)
+            perm_params_2 = permute_params(weights_2_unflattened, 42, flatten=True)
+
+            batch_perm = [img_1_batch, perm_params_1, img_2_batch, perm_params_2]
+
+            batch_loss, results = self.process_batch(batch_perm, criterion, 0, debug=debug, final=final)
+            total_loss += batch_loss
+
+        print(results)
+
+        total_loss /= len(val_loader)
+        return total_loss, results, (perm_params_1, perm_params_2)
+
+
+
     def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=128, path_dic=None, path_model=None):
         dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly)
         if path_dic is not None:
@@ -211,10 +239,6 @@ def vincent_main():
         plt.savefig(f"evaluation/images/strong_validation_{index}.png")
         plt.close(fig)
 
-if __name__ == "__main__":
-    vincent_main()
-
-
 def leon_main():
     with open("./config.json", "r") as json_file:
         json_file = json.load(json_file)
@@ -224,16 +248,54 @@ def leon_main():
     inr_trainer = INRTrainer()
     hypernetwork = HyperNetworkMLPGeneral().to(device)  # Move hypernetwork to GPU
 
-    k_lst = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
-    train_pairs, val_pairs = generate_pairs(100, 80, 4, seed=42)
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path="models/hypernetwork_2000_discrete_4.pth", override=False, load=True)
 
-    for k in k_lst:
-        hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path=f'hypernetwork_{k}E_reg5-1e-4.pth', override=True, load=False)
+    train_pairs = [(1,1)]
+    val_pairs= [(4,5)]
 
-        train_pairs, val_pairs = generate_pairs(2024, 128, 4, seed=42)
+    loss, results, perm_params = hypernetwork_trainer.eval_permutated(val_pairs, nn.MSELoss(), 1, 1, final = True)
+    print(loss)
+    new_model = sMLP(seed=42, INR_model_config=INR_model_config, device=device).to(device)
+    coords = torch.stack(torch.meshgrid(torch.arange(28), torch.arange(28)), dim=-1).reshape(-1, 2).float().to(device)
+    dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP/", on_the_fly=False)
 
-        results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True, path_dic="data/INR/sMLP_reg/", path_model=f"sMLP_5-1e-4_{k}_")
+    originals = [dataset[4], dataset[5]]
 
+    for i, params in enumerate(perm_params):
+        weights, biases = unflatten_weights(params, new_model)
+        prediction = new_model(coords, weights=weights, biases=biases).view(28, 28).cpu().detach().numpy()
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+        ax[0].imshow(originals[i][0][0], cmap='gray')
+        ax[0].set_title('Original Concatenated Image')
+        ax[0].axis('off')
+
+        ax[1].imshow(prediction, cmap='gray')
+        ax[1].set_title('Predicted Image')
+        ax[1].axis('off')
+
+        plt.show()
+
+
+    for ip in results:
+        expected_image = ip["expected"]
+        actual_image = ip["actual"]
+
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+        ax[0].imshow(expected_image, cmap='gray')
+        ax[0].set_title('Original Concatenated Image')
+        ax[0].axis('off')
+
+        ax[1].imshow(actual_image, cmap='gray')
+        ax[1].set_title('Predicted Image')
+        ax[1].axis('off')
+        
+        #plt.savefig(f"evaluation/images/strong_validation_{index}.png")
+        plt.show()
+        plt.close(fig)
+
+    '''
     for img_concat, predictions in results:
         fig, ax = plt.subplots(1, 2, figsize=(10, 5))
 
@@ -246,4 +308,8 @@ def leon_main():
         ax[1].axis('off')
 
         plt.show()
+    '''
+
+if __name__ == "__main__":
+    leon_main()
 
