@@ -34,24 +34,24 @@ class ImageINRDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        img, _ = self.dataset[index]
+        img, label = self.dataset[index]
         model_path = os.path.join(self.model_save_dir, f"sMLP_{index}.pth")
         if self.path is not None:
             model_path = os.path.join(self.model_save_dir, self.path + str(index) + ".pth")
 
         if os.path.exists(model_path):
             model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         else:
             if self.on_the_fly:
                 state_dict = self.trainer.fit_inr(self.dataset, index, self.model_cls, 42)
                 model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config)
-                model.load_state_dict(state_dict)
+                model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
                 torch.save(state_dict, model_path)
             else:
                 raise Exception(f"Model for index {index} not found and on_the_fly is set to False.")
 
-        return img, flatten_model_weights(model)
+        return img, label, flatten_model_weights(model)
 
 def main():
     with open("config.json") as json_file:
@@ -60,7 +60,7 @@ def main():
     inr_trainer = INRTrainer(debug=False)
     img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP", on_the_fly=True)
 
-    for index in range(2000, 4000):
+    for index in range(9500, 10000):
         try:
             img, model = img_inr_dataset[index]
             #print(f"Successfully retrieved model for index {index}")
