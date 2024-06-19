@@ -37,6 +37,33 @@ class PositionalEncoding(nn.Module):
         encoded_input = torch.cat(encodings, dim=-1)
         return encoded_input
 
+class PositionalEncoding3D(nn.Module):
+    def __init__(self, d_model=16, device=torch.device('cpu')):
+        super(PositionalEncoding3D, self).__init__()
+        self.d_model = d_model
+        self.device = device
+        self.frequency = self.generate_frequencies().to(self.device)
+
+    def generate_frequencies(self):
+        frequencies = torch.zeros(self.d_model // 2)
+        frequencies[0] = 0 
+        period_length = 6
+        for i in range(1, self.d_model // 2):
+            frequencies[i] = 2 * math.pi / period_length
+            period_length /= 2
+        print(frequencies)
+        return frequencies
+
+    def forward(self, x):
+        x = x.to(self.device)
+        encodings = []
+        for i in range(x.shape[1]):
+            x_enc = x[:, i:i+1] * self.frequency
+            enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+            encodings.append(enc_x)
+        encoded_input = torch.cat(encodings, dim=-1)
+        return encoded_input
+
 class INR(ABC, nn.Module):
     def __init__(self, seed, INR_model_config, device=torch.device('cpu')):
         super(INR, self).__init__()
@@ -55,6 +82,7 @@ class INR(ABC, nn.Module):
 
 class sMLP(INR):
     def build_model(self):
+        input_feature_dim = self.INR_model_config.get('input_feature_dim', None)
         hidden_features = self.INR_model_config.get('hidden_features', None)
         layers = self.INR_model_config.get('layers', None)
         positional = self.INR_model_config.get('positional', None)
@@ -65,7 +93,7 @@ class sMLP(INR):
 
         if self.positional:
             self.positional_encoding = PositionalEncoding(d_model=d_model, device=self.device)
-            input_features = d_model * 2
+            input_features = d_model * input_feature_dim
 
         self.layers = nn.ModuleList()
         self.layer_sizes = []
@@ -82,7 +110,6 @@ class sMLP(INR):
     def forward(self, x, weights=None, biases=None):
         if self.positional:
             x = self.positional_encoding(x)
-        
         for i, (linear, activation) in enumerate(zip(self.layers, self.activations)):
             if weights is not None and biases is not None:
                 weight = weights[i]

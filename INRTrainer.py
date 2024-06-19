@@ -9,7 +9,7 @@ from torchvision import datasets, transforms
 from architectures import INR, sMLP
 
 class INRTrainer:
-    def __init__(self, debug=False):
+    def __init__(self, debug=True):
         self.debug = debug
         with open("config.json") as json_file:
             json_file = json.load(json_file)

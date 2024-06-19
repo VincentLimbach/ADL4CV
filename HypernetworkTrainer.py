@@ -7,9 +7,9 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 
-
-from architectures import HyperNetworkMLPGeneralExtended, HyperNetworkMLPConcat, sMLP
+from architectures import HyperNetworkMLPGeneralExtended, HyperNetworkRes, HyperNetworkTrueRes, HyperNetworkTrueResBig, HyperNetworkMLPConcat, sMLP
 from data_access import *
 from INRTrainer import INRTrainer
 from torch.utils.data import DataLoader, Dataset
@@ -17,8 +17,11 @@ from torch.utils.tensorboard import SummaryWriter
 from utils import *
 
 # Check for GPU availability
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+with open("config.json") as file:
+    new_model = sMLP(seed=42, INR_model_config=json.load(file)["INR_model_config"], device=device)
 print(device)
+
 class PairedDataset(Dataset):
     def __init__(self, dataset, index_pairs):
         self.dataset = dataset
@@ -28,7 +31,6 @@ class PairedDataset(Dataset):
     def _get_item_from_cache(self, index):
         if index not in self._cache:
             img, label, flat_weights = self.dataset[index]
-            label = torch.tensor(label, dtype=torch.int8)
             self._cache[index] = (img.squeeze(0), label.squeeze(0), flat_weights)
         return self._cache[index]
 
@@ -66,32 +68,24 @@ class HyperNetworkTrainer:
 
 
     def process_batch(self, batch, criterion, epoch, debug=False, final=False):
-        start_time = time.time()
-        img_1_batch, label_1_batch, flat_weights_1_batch, img_2_batch, label_2_batch, flat_weights_2_batch = [b.to(device) for b in batch]  # Move batch data to GPU
+        img_1_batch, label_1_batch, flat_weights_1_batch, img_2_batch, label_2_batch, flat_weights_2_batch = [b for b in batch]   # Move batch data to GPU
         concatenated_weights = torch.cat((flat_weights_1_batch, flat_weights_2_batch), dim=1)
         #concatenated_weights += torch.randn_like(concatenated_weights) * 0.05
         batch_size = img_1_batch.shape[0]
-        new_model = self.base_model_cls(seed=42, INR_model_config=self.INR_model_config, device=device).to(device)
-
         offsets = torch.randint(1, 16, (batch_size, 4), device=device) * 2
-
-        #print(f"Preparation took: {time.time() - start_time:.8f} seconds")
-        start_time = time.time()
-
         predicted_weights = self.hypernetwork(concatenated_weights, offsets, label_1_batch, label_2_batch)
-        #print(f"Predicting took: {time.time() - start_time:.8f} seconds")
-        start_time = time.time()
 
         weights, biases = unflatten_weights(predicted_weights, new_model)
-        img_concat = generate_merged_image(img_1_batch, img_2_batch, offsets[:, 0], offsets[:, 1], offsets[:, 2], offsets[:, 3])
+
+        img_concat = generate_merged_image(img_1_batch, img_2_batch, offsets[:, 0], offsets[:, 1], offsets[:, 2], offsets[:, 3], device)
         height, width = img_concat.shape[1], img_concat.shape[2]
-        coords = torch.stack(torch.meshgrid(torch.arange(height), torch.arange(width)), dim=-1).reshape(-1, 2).float().to(device)
-        intensities = img_concat.view(-1, batch_size).to(device)
-        
+        coords = torch.cartesian_prod(torch.arange(height, device=device), torch.arange(width, device=device)).float()
+
+        intensities = img_concat.view(-1, batch_size)
         predictions = new_model(coords, weights=weights, biases=biases)
         
         loss = criterion(predictions.flatten(), intensities.flatten())
-        #print(f"Calculating the loss took: {time.time() - start_time:.8f} seconds")
+
         if final:
             actual_images = predictions.view(batch_size, height, width)
             expected_images = img_concat
@@ -105,7 +99,7 @@ class HyperNetworkTrainer:
                 results.append(result)
         else:
             results = []
-        #print(f"Calculations per batch take: {time.time() - start_time:.8f} seconds")
+        #print(f"Calculations per batch take: {time.time() - start_time_1:.8f} seconds")
         #print(f"Calculations per item take: {(time.time() - start_time)/batch_size:.8f} seconds")
         return loss.mean(), results
 
@@ -115,7 +109,7 @@ class HyperNetworkTrainer:
         counter = 0
         for batch in dataloader:
             counter+=1
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             start_time=time.time()
             batch_loss, _ = self.process_batch(batch, criterion, epoch, debug=debug)
             #print(f"Calculations for batch took: {time.time() - start_time:.8f} seconds")
@@ -168,10 +162,10 @@ class HyperNetworkTrainer:
 
 
 
-    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=128, path_dic=None, path_model=None):
-        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly)
+    def train_hypernetwork(self, dataset_name, train_pairs, val_pairs, on_the_fly=False, debug=False, batch_size=512, path_dic=None, path_model=None):
+        dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "data/INR/sMLP/", on_the_fly, device=device)
         if path_dic is not None:
-            dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, path_dic, on_the_fly, path_model)
+            dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, path_dic, on_the_fly, path_model, device=device)
 
         train_dataset = PairedDataset(dataset, train_pairs)
         val_dataset = PairedDataset(dataset, val_pairs)
@@ -180,9 +174,20 @@ class HyperNetworkTrainer:
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         criterion = nn.MSELoss()
-        if self.load:
-            optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.00005)
-            epochs = 20
+        
+        def lr_lambda(epoch):
+            if epoch < 30:
+                return 1.0
+            elif epoch < 75:
+                return 1/6
+            else:
+                return 1/12
+            
+        if not self.load:
+            optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.0005)
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+            epochs = 100
 
             for epoch in range(epochs):
                 start_time = time.time()
@@ -205,7 +210,8 @@ class HyperNetworkTrainer:
 
                 if (epoch + 1) % 1 == 0 or epoch == 0:
                     print(f"Epoch [{epoch + 1}/{epochs}], Loss: {train_loss.item()}, Val: {val_loss.item()}")
-                
+                scheduler.step()
+
             torch.save(self.hypernetwork.state_dict(), self.save_path)
 
         print(f"Final_validation: {val_loss}")
@@ -214,20 +220,19 @@ class HyperNetworkTrainer:
 def vincent_main():
     with open("./config.json", "r") as json_file:
         json_file = json.load(json_file)
-        INR_model_config = json_file["INR_model_config"]
-        INR_dataset_config = json_file["INR_dataset_config"]
     
     inr_trainer = INRTrainer()
-    hypernetwork = HyperNetworkMLPGeneralExtended().to(device) 
+    hypernetwork = HyperNetworkTrueResBig().to(device) 
 
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='models/hypernetwork_big_8192_both_arbitrary_positive_extended.pth', load=True)
-    train_pairs, val_pairs = generate_pairs(8192, 256, 16, seed=42)
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='models/hypernetwork_TrueResBig.pth', override=True)
+    train_pairs, val_pairs = generate_pairs(8192, 128, 32, seed=42)
     print(len(train_pairs))
     print(len(val_pairs))
     #train_pairs = [(1,1)]
     #train_pairs = [(0,0)]
+    #train_pairs=[(0,0)]
     val_pairs= [(i, i+1) for i in range(8192,8448,2)]
-    print(len(val_pairs))
+    #print(len(val_pairs))
     results = hypernetwork_trainer.train_hypernetwork("MNIST", train_pairs=train_pairs, val_pairs=val_pairs, on_the_fly=True, debug=True)
 
     for index, ip in enumerate(results):
@@ -265,7 +270,7 @@ def leon_main():
     print(loss)
     new_model = sMLP(seed=42, INR_model_config=INR_model_config, device=device).to(device)
     coords = torch.stack(torch.meshgrid(torch.arange(28), torch.arange(28)), dim=-1).reshape(-1, 2).float().to(device)
-    dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP/", on_the_fly=False)
+    dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP/", on_the_fly=False, device=device)
 
     originals = [dataset[4], dataset[5]]
 

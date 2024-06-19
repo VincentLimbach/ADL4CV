@@ -1,9 +1,5 @@
 import os
 import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import os
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
@@ -13,14 +9,17 @@ from utils import flatten_model_weights
 import json
 import time
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 class ImageINRDataset(Dataset):
-    def __init__(self, dataset_name, model_cls, trainer, model_save_dir, on_the_fly=False, path=None):
+    def __init__(self, dataset_name, model_cls, trainer, model_save_dir, on_the_fly=False, path=None, device='cpu'):
         self.dataset_name = dataset_name
         self.model_cls = model_cls
         self.trainer = trainer
         self.on_the_fly = on_the_fly
         self.model_save_dir = model_save_dir
         self.path = path
+        self.device = device
 
         if not os.path.exists(self.model_save_dir):
             os.makedirs(self.model_save_dir)
@@ -35,18 +34,20 @@ class ImageINRDataset(Dataset):
 
     def __getitem__(self, index):
         img, label = self.dataset[index]
+        img = img.to(self.device)  # Move the image to the specified device
+        label = torch.tensor(label).to(self.device)  # Move the label to the specified device
         model_path = os.path.join(self.model_save_dir, f"sMLP_{index}.pth")
         if self.path is not None:
             model_path = os.path.join(self.model_save_dir, self.path + str(index) + ".pth")
 
         if os.path.exists(model_path):
-            model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config)
-            model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+            model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config).to(self.device)
+            model.load_state_dict(torch.load(model_path, map_location=self.device))
         else:
             if self.on_the_fly:
                 state_dict = self.trainer.fit_inr(self.dataset, index, self.model_cls, 42)
-                model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config)
-                model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+                model = self.model_cls(seed=42, INR_model_config=self.trainer.INR_model_config).to(self.device)
+                model.load_state_dict(state_dict)
                 torch.save(state_dict, model_path)
             else:
                 raise Exception(f"Model for index {index} not found and on_the_fly is set to False.")
@@ -54,15 +55,14 @@ class ImageINRDataset(Dataset):
         return img, label, flatten_model_weights(model)
 
 def main():
-    with open("config.json") as json_file:
-        INR_model_config = json.load(json_file)["INR_model_config"]
 
-    inr_trainer = INRTrainer(debug=False)
-    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP", on_the_fly=True)
+    inr_trainer = INRTrainer(debug=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    img_inr_dataset = ImageINRDataset("MNIST", sMLP, inr_trainer, "data/INR/sMLP", on_the_fly=True, device=device)
 
-    for index in range(9500, 10000):
+    for index in range(10000, 20000):
         try:
-            img, model = img_inr_dataset[index]
+            img, label, model_weights = img_inr_dataset[index]
             #print(f"Successfully retrieved model for index {index}")
         except Exception as e:
             print(e)

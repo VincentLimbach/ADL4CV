@@ -12,6 +12,19 @@
         "epochs": 500,
         "weight_decay": 0.0005
     },
+    "INR_model_config_3D": {
+        "input_feature_dim": 3,
+        "output_feature_dim": 1,
+        "hidden_features": 256,
+        "layers": 8,
+        "positional": true,
+        "d_model": 16
+    },
+    "INR_trainer_config_3D": {
+        "lr": 0.0001,
+        "epochs": 2000,
+        "weight_decay": 0
+    },
     "INR_dataset_config": {},
     "Hypernetwork_config": {
         "input_dim": 4354,
