@@ -1,2 +1,5 @@
-data
-runs
+ADL4CV/data/gt_data/shrec_16_processed
+ADL4CV/data/gt_data/shrec_16_processed_collapsed
+ADL4CV/data/model_data/shrec_16/*.obj
+ADL4CV/runs
+ADL4CV/logs

@@ -1,5 +1,5 @@
 {
-    "INR_model_config": {
+    "INR_model_config_2D": {
         "input_feature_dim": 2,
         "output_feature_dim": 1,
         "hidden_features": 64,
@@ -7,27 +7,30 @@
         "positional": true,
         "d_model": 16
     },
-    "INR_trainer_config": {
+    "INR_trainer_config_2D": {
         "lr": 0.001,
-        "epochs": 500,
+        "epochs": 5000,
         "weight_decay": 0.0005
+    },
+    "Hypernetwork_config_2D": {
+        "input_dim": 4354,
+        "output_dim": 2177
     },
     "INR_model_config_3D": {
         "input_feature_dim": 3,
         "output_feature_dim": 1,
-        "hidden_features": 256,
-        "layers": 8,
+        "hidden_features": 128,
+        "layers": 3,
         "positional": true,
         "d_model": 16
     },
     "INR_trainer_config_3D": {
-        "lr": 0.0001,
-        "epochs": 2000,
+        "lr": 0.0005,
+        "epochs": 10000,
         "weight_decay": 0
     },
-    "INR_dataset_config": {},
-    "Hypernetwork_config": {
-        "input_dim": 4354,
-        "output_dim": 2177
+    "Hypernetwork_config_3D": {
+        "input_dim": 45826,
+        "output_dim": 22913
     }
 }
