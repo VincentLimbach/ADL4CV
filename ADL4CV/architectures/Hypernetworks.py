@@ -4,6 +4,115 @@ import torch.nn as nn
 
 from ADL4CV.architectures import PositionalEncoding
 
+"""class GroupLinearLayer(nn.Module):
+    def __init__(self, in_features, out_features, groups=8):
+        super(GroupLinearLayer, self).__init__()
+        self.groups = groups
+        self.in_features = in_features
+        self.out_features = out_features
+        self.group_in_features = in_features // groups
+        self.group_out_features = math.ceil(out_features / groups)
+
+        assert in_features % groups == 0, "in_features must be divisible by groups"
+
+        self.weight = nn.Parameter(torch.Tensor(groups, self.group_out_features, self.group_in_features))
+        self.bias = nn.Parameter(torch.Tensor(groups, self.group_out_features))
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        nn.init.uniform_(self.bias, -1, 1)
+        
+    def forward(self, x):
+        batch_size, num_features = x.size()
+        assert num_features == self.in_features, f"Expected input features {self.in_features}, but got {num_features}"
+
+        # Reshape to (batch_size * groups, group_in_features)
+        x = x.view(batch_size, self.groups, self.group_in_features)
+
+        # Perform batched matrix multiplication and add bias
+        out = torch.bmm(x, self.weight.permute(0, 2, 1)) + self.bias.unsqueeze(0).unsqueeze(0)
+
+        # Reshape to (batch_size, groups * group_out_features)
+        out = out.view(batch_size, -1)
+        
+        return out[:, :self.out_features]
+
+class HyperNetworkTranslator(nn.Module):
+    def __init__(self):
+        super(HyperNetworkTranslator, self).__init__()
+        
+        with open("config.json") as file:
+            hypernetwork_config = json.load(file)["Hypernetwork_config_2D"]
+        
+        self.d_model = 11
+        self.inital_size = hypernetwork_config["INRs_size"] +  2 * self.d_model + 105
+        self.fc1 = GroupLinearLayer(self.inital_size, 256)
+        self.fc2 = GroupLinearLayer(self.inital_size + 256, 256)
+        self.fc3 = GroupLinearLayer(self.inital_size + 512, 256)
+        self.fc4 = GroupLinearLayer(self.inital_size + 768, hypernetwork_config["INRs_size"])
+        
+        self.relu = nn.ReLU()
+        self.positional_encoding = PositionalEncoding(self.d_model)
+
+        print(sum(p.numel() for p in self.parameters()))
+        
+    def forward(self, x_init, offsets):
+        device = x_init.device
+        encoded_offset = self.positional_encoding(offsets).to(device)
+        x_init = torch.cat((x_init, encoded_offset), dim=1)
+        zero_padding = torch.zeros(x_init.size(0), 107, device=device)
+        x_init = torch.cat((x_init, zero_padding), dim=1)
+        print(x_init.shape)
+        x_1 = self.relu(self.fc1(x_init))
+        x_2 = torch.cat((x_init, x_1), dim=1)
+        x_2 = self.relu(self.fc2(x_2))
+        x_3 = torch.cat((x_init, x_1, x_2), dim=1)
+        x_3 = self.relu(self.fc3(x_3))
+        x_4 = torch.cat((x_init, x_1, x_2, x_3), dim=1)
+        x_out = self.fc4(x_4)
+        
+        return x_out
+"""
+
+
+class HyperNetworkTranslator(nn.Module):
+    def __init__(self):
+        super(HyperNetworkTranslator, self).__init__()
+        
+        with open("config.json") as file:
+            hypernetwork_config = json.load(file)["Hypernetwork_config_2D"]
+        
+        self.d_model=12
+        
+        self.inital_size = hypernetwork_config["INRs_size"] + 2 * self.d_model
+        
+        self.fc1 = nn.Linear(self.inital_size, 256)
+        self.fc2 = nn.Linear(self.inital_size + 256, 256)
+        self.fc3 = nn.Linear(self.inital_size + 512, 256)
+        self.fc4 = nn.Linear(self.inital_size + 768, hypernetwork_config["INRs_size"] )
+        
+        self.relu = nn.ReLU()
+
+        self.positional_encoding = PositionalEncoding(self.d_model)
+
+        print(sum(p.numel() for p in self.parameters()))
+
+        
+    def forward(self, x_init, offsets):
+        device = x_init.device
+        encoded_offset = self.positional_encoding(offsets).to(device)
+        x_init = torch.cat((x_init, encoded_offset), dim=1)
+        x_1 = self.relu(self.fc1(x_init))
+        x_2 = torch.cat((x_init, x_1), dim=1)
+        x_2 = self.relu(self.fc2(x_2))
+        x_3 = torch.cat((x_init, x_1, x_2), dim=1)
+        x_3 = self.relu(self.fc3(x_3))
+        x_4 = torch.cat((x_init, x_1, x_2, x_3), dim=1)
+        x_out = self.fc4(x_4)
+        
+        return x_out
+
 class HyperNetworkTrueRes(nn.Module):
     def __init__(self):
         super(HyperNetworkTrueRes, self).__init__()
@@ -14,24 +123,21 @@ class HyperNetworkTrueRes(nn.Module):
         self.class_embedding_dim=16
         self.positional_encoding = PositionalEncoding(self.d_model)
 
-        self.shared_fc1 = nn.Linear(self.hypernetwork_config["input_dim"] // 2 + self.d_model*2, 256)
+        self.shared_fc1 = nn.Linear(self.hypernetwork_config["INRs_size"] + self.d_model*2, 256)
         self.shared_relu1 = nn.ReLU()
         self.shared_fc2 = nn.Linear(256, self.shared_output_dim)
         self.shared_relu2 = nn.ReLU()
 
         self.label_embedding = nn.Embedding(10, self.class_embedding_dim)
-        self.dim = self.hypernetwork_config["input_dim"] + self.d_model * 4 + self.shared_output_dim * 2 + self.class_embedding_dim * 2
-        
-        self.fc1 = nn.Linear(self.dim, 256)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(self.dim + 256, 256)
-        self.relu2 = nn.ReLU()
+        self.dim = self.hypernetwork_config["INRs_size"]*2 + self.d_model * 4 + self.shared_output_dim * 2 + self.class_embedding_dim * 2
 
+        self.relu = nn.ReLU()
+
+        self.fc1 = nn.Linear(self.dim, 256)
+        self.fc2 = nn.Linear(self.dim + 256, 256)
         self.fc3 = nn.Linear(self.dim + 2*256, 256)
-        self.relu3 = nn.ReLU()
         self.fc4 = nn.Linear(self.dim + 3*256, 256)
-        self.relu4 = nn.ReLU()
-        self.fc5 = nn.Linear(self.dim + 4*256, self.hypernetwork_config["output_dim"])
+        self.fc5 = nn.Linear(self.dim + 4*256, self.hypernetwork_config["INRs_size"])
 
         print(sum(p.numel() for p in self.parameters()))
 
@@ -56,13 +162,13 @@ class HyperNetworkTrueRes(nn.Module):
 
         x_init = torch.cat((x, encoded_offset, xs_left, xs_right, label_1_embeddings, label_2_embeddings), dim=1)
         
-        x_1 = self.relu1(self.fc1(x_init))
+        x_1 = self.relu(self.fc1(x_init))
         x_2 = torch.cat((x_init, x_1), dim=1)
-        x_2 = self.relu2(self.fc2(x_2))
+        x_2 = self.relu(self.fc2(x_2))
         x_3 = torch.cat((x_init, x_1, x_2), dim=1)
-        x_3 = self.relu3(self.fc3(x_3))
+        x_3 = self.relu(self.fc3(x_3))
         x_4 = torch.cat((x_init, x_1, x_2, x_3), dim=1)
-        x_4 = self.relu4(self.fc4(x_4))
+        x_4 = self.relu(self.fc4(x_4))
         x = torch.cat((x_init, x_1, x_2, x_3, x_4), dim=1)
         x = self.fc5(x)
         return x

@@ -13,8 +13,7 @@
         "weight_decay": 0.0005
     },
     "Hypernetwork_config_2D": {
-        "input_dim": 4354,
-        "output_dim": 2177
+        "INRs_size": 2177
     },
     "INR_model_config_3D": {
         "input_feature_dim": 3,

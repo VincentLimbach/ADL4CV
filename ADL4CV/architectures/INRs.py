@@ -21,7 +21,8 @@ class PositionalEncoding(nn.Module):
     def generate_frequencies(self):
         frequencies = torch.zeros(self.d_model // 2)
         period_length = 72
-        for i in range(0, self.d_model // 2):
+        frequencies[0]=0
+        for i in range(1, self.d_model // 2):
             frequencies[i] = 2 * math.pi / period_length
             period_length /= 2
         return frequencies
@@ -29,10 +30,17 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x.to(self.device)
         encodings = []
-        for i in range(x.shape[1]):
-            x_enc = x[:, i:i+1] * self.frequency
-            enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
-            encodings.append(enc_x)
+        shape = x.shape
+        if len(shape) == 2:
+            for i in range(x.shape[-1]):
+                x_enc = x[:, i:i+1] * self.frequency
+                enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+                encodings.append(enc_x)
+        if len(shape) == 3:
+            for i in range(x.shape[-1]):
+                x_enc = x[:, :, i:i+1] * self.frequency
+                enc_x = torch.cat((torch.sin(x_enc), torch.cos(x_enc)), dim=-1)
+                encodings.append(enc_x)
         encoded_input = torch.cat(encodings, dim=-1)
         return encoded_input
 
