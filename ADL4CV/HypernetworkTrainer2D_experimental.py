@@ -87,15 +87,17 @@ class HyperNetworkTrainer:
         height_1, width_1 = img_1_batch.shape[1], img_1_batch.shape[2]
         coords_1 = torch.cartesian_prod(torch.arange(height_1, device=device), torch.arange(width_1, device=device)).float()
         coords_1 = coords_1.unsqueeze(0).repeat(batch_size, 1, 1)
-        coords_1[:, :, 0] += offsets[:, 0].unsqueeze(1)
-        coords_1[:, :, 1] += offsets[:, 1].unsqueeze(1)
+        coords_1[:, :, 1] += offsets[:, 0].unsqueeze(1)
+        coords_1[:, :, 0] += offsets[:, 1].unsqueeze(1)
         
         height_2, width_2 = img_2_batch.shape[1], img_2_batch.shape[2]
         coords_2 = torch.cartesian_prod(torch.arange(height_2, device=device), torch.arange(width_2, device=device)).float()
-        
+
         coords_2 = coords_2.unsqueeze(0).repeat(batch_size, 1, 1)
-        coords_2[:, :, 0] += offsets[:, 2].unsqueeze(1)
-        coords_2[:, :, 1] += offsets[:, 3].unsqueeze(1)
+        coords_2[:, :, 1] += offsets[:, 2].unsqueeze(1)
+        coords_2[:, :, 0] += offsets[:, 3].unsqueeze(1)
+
+
         
         predictions_1 = new_model(coords_1, weights=weights_1, biases=biases_1)
         predictions_2 = new_model(coords_2, weights=weights_2, biases=biases_2)

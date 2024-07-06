@@ -88,6 +88,24 @@ def generate_merged_image(img_1_batch, img_2_batch, x_1_offsets, y_1_offsets, x_
     
     return merged_imgs
 
+def generate_shifted_image(img_batch, x_1_offsets, y_1_offsets, device):
+    batch_size, img_height, img_width = img_batch.shape
+    
+    max_height = img_height + y_1_offsets.max().item()
+    max_width = img_width + x_1_offsets.max().item()
+
+    shifted_imgs = torch.zeros((batch_size, max_height, max_width), dtype=torch.float32, device=device)
+    
+    batch_indices = torch.arange(batch_size, device=device)[:, None, None]
+
+    y1_indices = y_1_offsets[:, None] + torch.arange(img_height, device=device)
+    x1_indices = x_1_offsets[:, None] + torch.arange(img_width, device=device)
+    
+    shifted_imgs[batch_indices, y1_indices[:, :, None], x1_indices[:, None, :]] = img_batch
+    
+    return shifted_imgs
+
+
 def normalize_batch(coords):
     coords -= torch.mean(coords, axis=1, keepdims=True)
     coord_max = torch.amax(coords, dim=(1,2))[:, None, None]

@@ -195,3 +195,20 @@ class HyperNetwork3D(nn.Module):
         x = self.relu3(self.fc3(x))
         x = self.fc4(x)
         return x
+    
+class SharpNet(nn.Module):
+    def __init__(self):
+        super(SharpNet, self).__init__()
+
+        self.conv1 = nn.Conv2D(1, 16, 3, padding="same")
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2D(16, 32, 3, padding="same")
+        self.relu2 = nn.ReLU()
+        self.conv3 = nn.Conv2D(32, 1, 3, padding="same")
+        print(sum(p.numel() for p in self.parameters()))
+
+    def forward(self, x):
+        x = self.relu1(self.conv1(x))
+        x = self.relu2(self.conv2(x))
+        x = self.relu3(self.conv3(x))
+        return x
