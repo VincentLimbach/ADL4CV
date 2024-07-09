@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from ADL4CV.architectures import HyperNetworkTrueRes, sMLP, SharpNet
+from ADL4CV.architectures import HyperNetworkTrueRes, sMLP, SharpNet, HyperNetworkMerger
 from ADL4CV.data import *
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
@@ -81,7 +81,6 @@ class SharpnetTrainer:
 
         intensities = img_concat.view(-1, batch_size)
         predictions_hypernet = new_model(coords, weights=weights, biases=biases)
-        
         print(predictions_hypernet.shape)
         predictions_sharpnet = self.sharpnet(predictions_hypernet)
         print(predictions_sharpnet.shape)
@@ -146,29 +145,29 @@ class SharpnetTrainer:
         def lr_lambda(epoch):
             return 1 - (epoch/100)*(19/20)
             
-        if not self.load:
-            optimizer = optim.Adam(self.sharpnet.parameters(), lr=0.005)
-            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-            epochs = 100
+        optimizer = optim.Adam(self.sharpnet.parameters(), lr=0.005)
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-            for epoch in range(epochs):
-                start_time = time.time()
+        epochs = 100
 
-                train_loss = self.train_one_epoch(train_loader, criterion, optimizer, epoch, debug=debug)
-                final = (epoch == epochs-1)
-                weak_val_loss, weak_val_results = self.validate(weak_val_loader, criterion, epoch, debug=debug, final=final)
-                strong_val_loss, strong_val_results = self.validate(strong_val_loader, criterion, epoch, debug=debug, final=final)
-                self.writer.add_scalars(datetime.now().strftime("%Y%m%d-%H%M%S"), {'Train': train_loss.item(), 'Weak_Val': weak_val_loss.item(), 'Strong_Val': strong_val_loss.item()}, epoch)
+        for epoch in range(epochs):
+            start_time = time.time()
 
-                if epoch == 0 or epoch == 1 or epoch%5==0:
-                    print(f"Calculations for epoch {epoch} took: {time.time() - start_time:.8f} seconds")
+            train_loss = self.train_one_epoch(train_loader, criterion, optimizer, epoch, debug=debug)
+            final = (epoch == epochs-1)
+            weak_val_loss, weak_val_results = self.validate(weak_val_loader, criterion, epoch, debug=debug, final=final)
+            strong_val_loss, strong_val_results = self.validate(strong_val_loader, criterion, epoch, debug=debug, final=final)
+            self.writer.add_scalars(datetime.now().strftime("%Y%m%d-%H%M%S"), {'Train': train_loss.item(), 'Weak_Val': weak_val_loss.item(), 'Strong_Val': strong_val_loss.item()}, epoch)
 
-                if (epoch + 1) % 1 == 0 or epoch == 0:
-                    print(f"Epoch [{epoch + 1}/{epochs}], Train: {train_loss.item()}, Weak_Val: {weak_val_loss.item()}, Strong_Val: {strong_val_loss.item()}")
-                scheduler.step()
+            if epoch == 0 or epoch == 1 or epoch%5==0:
+                print(f"Calculations for epoch {epoch} took: {time.time() - start_time:.8f} seconds")
 
-            torch.save(self.sharpnet.state_dict(), self.save_path)
+            if (epoch + 1) % 1 == 0 or epoch == 0:
+                print(f"Epoch [{epoch + 1}/{epochs}], Train: {train_loss.item()}, Weak_Val: {weak_val_loss.item()}, Strong_Val: {strong_val_loss.item()}")
+            scheduler.step()
+
+        torch.save(self.sharpnet.state_dict(), self.save_path)
 
         print(f"Final\nWeak validation: {weak_val_loss}\nStrong validation: {strong_val_loss}")
         return weak_val_results, strong_val_results
@@ -196,7 +195,7 @@ def main():
         json_file = json.load(json_file)
     
     inr_trainer = INRTrainer2D()
-    hypernetwork = HyperNetworkTrueRes().to(device) 
+    hypernetwork = HyperNetworkMerger().to(device) 
     sharpnet = SharpNet().to(device)
 
     sharpnet_trainer = SharpnetTrainer(sharpnet, hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/2D/sharpnet.pth', hypernet_path="ADL4CV/models/2D/hypernetwork_true_res.pth", load=True, override=True)
@@ -207,10 +206,10 @@ def main():
     print(len(weak_val_pairs))
     print(len(strong_val_pairs))
 
-    weak_val_results, strong_val_results = sharpnet.train_sharpnet("MNIST", train_pairs=train_pairs, weak_val_pairs=weak_val_pairs, strong_val_pairs=strong_val_pairs, on_the_fly=True, debug=True)
+    weak_val_results, strong_val_results = sharpnet_trainer.train_sharpnet("MNIST", train_pairs=train_pairs, weak_val_pairs=weak_val_pairs, strong_val_pairs=strong_val_pairs, on_the_fly=True, debug=True)
 
-    save_figures("ADL4CV/evaluation/sharpnet/weak_validation/", weak_val_results)
-    save_figures("ADL4CV/evaluation/sharpnet/strong_validation/", strong_val_results)
+    save_figures("ADL4CV/evaluation/sharpnet/weak_validation_leon/", weak_val_results)
+    save_figures("ADL4CV/evaluation/sharpnet/strong_validation_leon/", strong_val_results)
 
 if __name__ == "__main__":
     main()

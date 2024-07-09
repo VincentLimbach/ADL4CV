@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from ADL4CV.architectures import HyperNetworkTrueRes, sMLP
+from ADL4CV.architectures import HyperNetworkTrueRes, sMLP, HyperNetworkMerger, SharpNet
 from ADL4CV.data import *
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
@@ -41,10 +41,11 @@ class PairedDataset(Dataset):
         return img_1, label_1, flat_weights_1, img_2, label_2, flat_weights_2
 
 class HyperNetworkTrainer:
-    def __init__(self, hypernetwork, base_model_cls, inr_trainer, save_path, load=False, override=False):
+    def __init__(self, sharpnet, hypernetwork, base_model_cls, inr_trainer, save_path, load=False, override=False):
         with open("config.json") as file:
             self.INR_model_config = json.load(file)["INR_model_config_2D"]
         
+        self.sharpnet = sharpnet
         self.inr_trainer = inr_trainer
         self.hypernetwork = hypernetwork.to(device)  # Move hypernetwork to GPU
         self.base_model_cls = base_model_cls
@@ -57,6 +58,7 @@ class HyperNetworkTrainer:
         if load:
             if os.path.exists(self.save_path):
                 self.hypernetwork.load_state_dict(torch.load(self.save_path, map_location=torch.device('cpu')))
+                self.sharpnet.load_state_dict(torch.load('ADL4CV/models/2D/hypernetwork_sharper.pth', map_location=torch.device('cpu')))
                 print(f"Model loaded from {self.save_path}")
             else:
                 raise FileNotFoundError(f"No model found at {self.save_path} to load.")
@@ -77,13 +79,15 @@ class HyperNetworkTrainer:
         height, width = img_concat.shape[1], img_concat.shape[2]
         coords = torch.cartesian_prod(torch.arange(height, device=device), torch.arange(width, device=device)).float()
 
-        intensities = img_concat.view(-1, batch_size)
-        predictions = new_model(coords, weights=weights, biases=biases)
+        intensities = img_concat.view(batch_size, -1)
+        predictions_hypernet = new_model(coords, weights=weights, biases=biases)
+        predictions_hypernet = predictions_hypernet.view(batch_size, height, width)
         
-        loss = criterion(predictions.flatten(), intensities.flatten())
+        predictions_sharpnet = self.sharpnet(predictions_hypernet)
+        loss = criterion(predictions_sharpnet.flatten(), intensities.flatten())
 
         if final:
-            actual_images = predictions.view(batch_size, height, width)
+            actual_images = predictions_sharpnet.view(batch_size, height, width)
             expected_images = img_concat
     
             results = []
@@ -123,7 +127,7 @@ class HyperNetworkTrainer:
         total_loss /= len(dataloader)
         return total_loss, results
 
-    def train_hypernetwork(self, dataset_name, train_pairs, weak_val_pairs, strong_val_pairs, on_the_fly=False, debug=False, batch_size=512, path_dic=None, path_model=None):
+    def train_hypernetwork(self, dataset_name, train_pairs, weak_val_pairs, strong_val_pairs, on_the_fly=False, debug=False, batch_size=256, path_dic=None, path_model=None):
         dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, "ADL4CV/data/model_data/MNIST", on_the_fly, device=device)
         if path_dic is not None:
             dataset = ImageINRDataset(dataset_name, self.base_model_cls, self.inr_trainer, path_dic, on_the_fly, path_model, device=device)
@@ -139,31 +143,31 @@ class HyperNetworkTrainer:
         criterion = nn.MSELoss()
         
         def lr_lambda(epoch):
-            return 1 - (epoch/100)*(19/20)
+            return 1 - epoch*0.0099
             
-        if not self.load:
-            optimizer = optim.Adam(self.hypernetwork.parameters(), lr=0.0005)
-            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        optimizer = optim.Adam(list(self.hypernetwork.parameters())+list(self.sharpnet.parameters()), lr=0.00005)
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-            epochs = 100
+        epochs = 50
 
-            for epoch in range(epochs):
-                start_time = time.time()
+        for epoch in range(epochs):
+            start_time = time.time()
 
-                train_loss = self.train_one_epoch(train_loader, criterion, optimizer, epoch, debug=debug)
-                final = (epoch == epochs-1)
-                weak_val_loss, weak_val_results = self.validate(weak_val_loader, criterion, epoch, debug=debug, final=final)
-                strong_val_loss, strong_val_results = self.validate(strong_val_loader, criterion, epoch, debug=debug, final=final)
-                self.writer.add_scalars(datetime.now().strftime("%Y%m%d-%H%M%S"), {'Train': train_loss.item(), 'Weak_Val': weak_val_loss.item(), 'Strong_Val': strong_val_loss.item()}, epoch)
+            train_loss = self.train_one_epoch(train_loader, criterion, optimizer, epoch, debug=debug)
+            final = (epoch == epochs-1)
+            weak_val_loss, weak_val_results = self.validate(weak_val_loader, criterion, epoch, debug=debug, final=final)
+            strong_val_loss, strong_val_results = self.validate(strong_val_loader, criterion, epoch, debug=debug, final=final)
+            self.writer.add_scalars(datetime.now().strftime("%Y%m%d-%H%M%S"), {'Train': train_loss.item(), 'Weak_Val': weak_val_loss.item(), 'Strong_Val': strong_val_loss.item()}, epoch)
 
-                if epoch == 0 or epoch == 1 or epoch%5==0:
-                    print(f"Calculations for epoch {epoch} took: {time.time() - start_time:.8f} seconds")
+            if epoch == 0 or epoch == 1 or epoch%5==0:
+                print(f"Calculations for epoch {epoch} took: {time.time() - start_time:.8f} seconds")
 
-                if (epoch + 1) % 1 == 0 or epoch == 0:
-                    print(f"Epoch [{epoch + 1}/{epochs}], Train: {train_loss.item()}, Weak_Val: {weak_val_loss.item()}, Strong_Val: {strong_val_loss.item()}")
-                scheduler.step()
+            if (epoch + 1) % 1 == 0 or epoch == 0:
+                print(f"Epoch [{epoch + 1}/{epochs}], Train: {train_loss.item()}, Weak_Val: {weak_val_loss.item()}, Strong_Val: {strong_val_loss.item()}")
+            scheduler.step()
 
-            torch.save(self.hypernetwork.state_dict(), self.save_path)
+        torch.save(self.hypernetwork.state_dict(), self.save_path)
+        torch.save(self.sharpnet.state_dict(), 'ADL4CV/models/2D/hypernetwork_sharper.pth')
 
         print(f"Final\nWeak validation: {weak_val_loss}\nStrong validation: {strong_val_loss}")
         return weak_val_results, strong_val_results
@@ -191,10 +195,11 @@ def main():
         json_file = json.load(json_file)
     
     inr_trainer = INRTrainer2D()
-    hypernetwork = HyperNetworkTrueRes().to(device) 
+    hypernetwork = HyperNetworkMerger().to(device) 
+    sharpnet = SharpNet().to(device)
 
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/2D/hypernetwork_true_res.pth', override=True)
-    train_pairs, weak_val_pairs = generate_pairs(8192, 256, 32, seed=42)
+    hypernetwork_trainer = HyperNetworkTrainer(sharpnet, hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/2D/hypernetwork_true_res.pth', load=True)
+    train_pairs, weak_val_pairs = generate_pairs(4096, 256, 8, seed=42)
     strong_val_pairs, _ = generate_pairs(256, 0, 1, seed=42)
     strong_val_pairs= [(i+8192, j+8192) for i, j in strong_val_pairs]
     print(len(train_pairs))

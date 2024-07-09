@@ -176,12 +176,20 @@ def main():
     hypernetwork = HyperNetwork3D()
     
     inr_trainer = INRTrainer3D(debug=True)
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_pipline_check.pth', override=True)
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_armadillo.pth', override=True)
     train_pairs, val_pairs = generate_pairs(16, 8, 4)
     hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=1)
     
+    armadillo_train_idx = [54, 61, 201, 226, 260]
+    armadillo_pairs = [[x,y] for x in armadillo_train_idx for y in armadillo_train_idx]
+    import random
+    random.seed(42)
+    random.shuffle(armadillo_pairs)
+    
+    train_pairs = armadillo_pairs[:20]
+    val_pairs = armadillo_pairs[20:]
 
-    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_pipline_check.pth", map_location=torch.device(device)))
+    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_armadillo.pth", map_location=torch.device(device)))
 
     with open("config.json") as json_file:
                 json_file = json.load(json_file)
@@ -189,9 +197,12 @@ def main():
 
     model = sMLP(seed=42, INR_model_config=INR_model_config)
 
-    model.load_state_dict(torch.load("ADL4CV/data/model_data/shrec_16/T61.pth", map_location=torch.device(device)))
+    idx_1 , idx_2 = train_pairs[5]
+    print(idx_1, idx_2)
+
+    model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_1}.pth", map_location=torch.device(device)))
     params_1 = flatten_model_weights(model)
-    model.load_state_dict(torch.load("ADL4CV/data/model_data/shrec_16/T61.pth", map_location=torch.device(device)))
+    model.load_state_dict(torch.load("ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
     params_2 = flatten_model_weights(model)
     params_cat = torch.cat((params_2, params_1)).to(device)
 
