@@ -74,7 +74,7 @@ class HyperNetworkTrainer:
 
         weights, biases = unflatten_weights(predicted_weights, new_model)
 
-        coords, sdfs = generate_merged_object(obj_1_batch, obj_2_batch, 1, 0, 0, 0, 0, 0, device)
+        coords, sdfs = generate_merged_object(obj_1_batch, obj_2_batch, 0, -.5, 0, 0, .5, 0, device)
 
         coords = dict2cuda(coords, device)
         sdfs = dict2cuda(sdfs, device)
@@ -124,15 +124,23 @@ class HyperNetworkTrainer:
         train_dataset = PairedDataset3D(dataset, train_pairs)
         val_dataset = PairedDataset3D(dataset, val_pairs)
 
+        for idx, i in enumerate(train_dataset):
+            obj_1, _, _, obj_2, _, _ = i
+            if obj_1.shape[0] == 250:
+                print(idx, train_pairs[idx], 1)
+            if obj_2.shape[0] == 250:
+                print(idx, train_pairs[idx], 2)
+
+
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         criterion = nn.MSELoss()
 
         def lr_lambda(epoch):
-            if epoch < 300:
+            if epoch < 1000:
                 return 1.0
-            elif epoch < 750:
+            elif epoch < 2000:
                 return 1/6
             else:
                 return 1/12
@@ -142,7 +150,7 @@ class HyperNetworkTrainer:
             optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.0005)
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-            epochs = 100
+            epochs = 5000
 
             for epoch in range(epochs):
                 start_time = time.time()
@@ -176,20 +184,47 @@ def main():
     hypernetwork = HyperNetwork3D()
     
     inr_trainer = INRTrainer3D(debug=True)
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_armadillo.pth', override=True)
-    train_pairs, val_pairs = generate_pairs(16, 8, 4)
-    hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=1)
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_large.pth', override=True)
+    train_pairs, val_pairs = generate_pairs(256, 8, 16)
+
+    dataset = ObjectINRDataset(sMLP, inr_trainer, "ADL4CV/data/model_data/shrec_16", on_the_fly=False, device=device)
     
-    armadillo_train_idx = [54, 61, 201, 226, 260]
-    armadillo_pairs = [[x,y] for x in armadillo_train_idx for y in armadillo_train_idx]
-    import random
-    random.seed(42)
+    outliers = []
+    for i in range(256):
+        if dataset[i][0].shape[0] != 252:
+            print(i, dataset[i][0].shape[0])
+            outliers.append(i)
+
+    print("Non conforming objects: ", outliers)
+    
+    
+    #------------------------------- Hypernetwork funktionier auf diesem Training set, da keine objekte mit 250 vertices enthalten -----------
+    armadillo_train_idx = [54, 61, 201, 226, 260 ] #, 279, 341, 344, 370,
+#                         403, 457, 489] #, 522, 539, 558, 597]
+    armadillo_pairs = [[x, y] for x in armadillo_train_idx for y in armadillo_train_idx]
+    random.seed(43)
     random.shuffle(armadillo_pairs)
-    
     train_pairs = armadillo_pairs[:20]
     val_pairs = armadillo_pairs[20:]
 
-    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_armadillo.pth", map_location=torch.device(device)))
+    #-----------------------------------------------------------------------------------------
+
+
+    #train_pairs = [(61,61) for i in range(16)]
+    #val_pairs = [(61,61) for i in range(2)]
+
+    hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=2)
+
+
+
+
+
+
+
+    
+    hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=32)
+    
+    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_large.pth", map_location=torch.device(device)))
 
     with open("config.json") as json_file:
                 json_file = json.load(json_file)
@@ -211,8 +246,8 @@ def main():
     weights, biases = unflatten_weights(predicted_weights, model)
     
     step = .01
-    scale_1 = 1.6
-    scale_2 = .5
+    scale_1 = 2
+    scale_2 = 1
     render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases)
 
 
