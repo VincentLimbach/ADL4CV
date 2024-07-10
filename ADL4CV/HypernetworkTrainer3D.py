@@ -136,21 +136,16 @@ class HyperNetworkTrainer:
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         criterion = nn.MSELoss()
+        
+        epochs = 5000
 
         def lr_lambda(epoch):
-            if epoch < 1000:
-                return 1.0
-            elif epoch < 2000:
-                return 1/6
-            else:
-                return 1/12
+            return 1 - (0.9999 * epoch/epochs)
 
 
         if not self.load:
-            optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.0005)
+            optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.00005, weight_decay=0.002)
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
-
-            epochs = 5000
 
             for epoch in range(epochs):
                 start_time = time.time()
@@ -185,7 +180,7 @@ def main():
     
     inr_trainer = INRTrainer3D(debug=True)
     hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_large.pth', override=True)
-    train_pairs, val_pairs = generate_pairs(256, 8, 16)
+    train_pairs, val_pairs = generate_pairs(256, 32, 32)
 
     dataset = ObjectINRDataset(sMLP, inr_trainer, "ADL4CV/data/model_data/shrec_16", on_the_fly=False, device=device)
     
@@ -196,31 +191,16 @@ def main():
             outliers.append(i)
 
     print("Non conforming objects: ", outliers)
-    
-    
-    #------------------------------- Hypernetwork funktionier auf diesem Training set, da keine objekte mit 250 vertices enthalten -----------
-    armadillo_train_idx = [54, 61, 201, 226, 260 ] #, 279, 341, 344, 370,
-#                         403, 457, 489] #, 522, 539, 558, 597]
-    armadillo_pairs = [[x, y] for x in armadillo_train_idx for y in armadillo_train_idx]
-    random.seed(43)
-    random.shuffle(armadillo_pairs)
-    train_pairs = armadillo_pairs[:20]
-    val_pairs = armadillo_pairs[20:]
 
-    #-----------------------------------------------------------------------------------------
+    def filter_outliers(list_of_lists, outliers):
+        filtered_lists = []
+        for sublist in list_of_lists:
+            if not any(item in outliers for item in sublist):
+                filtered_lists.append(sublist)
+        return filtered_lists
 
-
-    #train_pairs = [(61,61) for i in range(16)]
-    #val_pairs = [(61,61) for i in range(2)]
-
-    hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=2)
-
-
-
-
-
-
-
+    train_pairs = filter_outliers(train_pairs, outliers)
+    val_pairs = filter_outliers(val_pairs, outliers)
     
     hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=32)
     
