@@ -87,28 +87,42 @@ train_losses = np.loadtxt("ADL4CV/evaluation/train_losses.txt", delimiter=",")
 
 ci = 1.96 * np.std(train_losses, axis=0)/np.sqrt(50)
 
+plt.rcParams["figure.figsize"] = (5,5) #set figure size
+
 x = np.arange(10000)
 mean = np.mean(train_losses, axis=0)
+
+
+#--------------- regular scaling
 plt.plot(x, mean)
 plt.fill_between(x, (mean-ci), (mean+ci), color='b', alpha=.1)
+
 threshold = 0.005
 loss_intercept = np.min(np.where(mean < threshold)[0])
-
-plt.yscale("log")
-plt.xscale("log")
-
 y_min, y_max = plt.ylim()
 x_min, x_max = plt.xlim()
-
-print(y_max, y_min, x_min, x_max)
-
-print((np.log10(y_max) + np.log10(y_min)), 10**((np.log10(y_max) + np.log10(y_min)) * np.log10(threshold)))
 
 plt.vlines(loss_intercept, ymax=threshold, ymin=0, linestyle='--', color="red") 
 plt.hlines(threshold, xmax=loss_intercept, xmin=0, linestyle='--', color="green") 
 plt.hlines(threshold, xmax=x_max, xmin=loss_intercept, linestyle='--', color="grey")
 plt.xlabel("Epochs")
 plt.ylabel("Mean training loss")
-plt.show()
+plt.savefig("./ADL4CV/evaluation/Mean_training_loss_regular.png", bbox_inches='tight')
+#--------------- log-log
+plt.plot(x, mean)
+plt.fill_between(x, (mean-ci), (mean+ci), color='b', alpha=.1)
+plt.yscale("log")
+plt.xscale("log")
 
+threshold = 0.005
+loss_intercept = np.min(np.where(mean < threshold)[0])
+y_min, y_max = plt.ylim()
+x_min, x_max = plt.xlim()
 
+print((np.log10(y_max) + np.log10(y_min)), 10**((np.log10(y_max) + np.log10(y_min)) * np.log10(threshold)))
+plt.vlines(loss_intercept, ymax=threshold, ymin=0, linestyle='--', color="red") 
+plt.hlines(threshold, xmax=loss_intercept, xmin=0, linestyle='--', color="green") 
+plt.hlines(threshold, xmax=x_max, xmin=loss_intercept, linestyle='--', color="grey")
+plt.xlabel("Epochs")
+plt.ylabel("Mean training loss")
+plt.savefig("./ADL4CV/evaluation/Mean_training_loss_loglog.png", bbox_inches='tight')
