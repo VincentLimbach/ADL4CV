@@ -144,7 +144,7 @@ def generate_merged_object(obj_1_batch, obj_2_batch, x_1_offsets, y_1_offsets, z
 
     kd_trees = [KDTree(np.array(v_batch[i])) for i in range(batch_size)] # kriege das nicht gebatched weil wir für jedes pair einen eigenen tree brauchen
 
-    points = np.array(v_batch)
+    points = np.repeat(np.array(v_batch), repeats=16, axis=1)
     points[:, ::2] += np.random.laplace(scale=1e-1, size=(batch_size, points.shape[1]//2, points.shape[-1]))
     points[:, 1::2] += np.random.laplace(scale=1e-3, size=(batch_size, points.shape[1]//2, points.shape[-1]))
 

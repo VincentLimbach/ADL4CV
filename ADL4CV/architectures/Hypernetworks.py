@@ -268,20 +268,96 @@ class HyperNetwork3D(nn.Module):
         with open("config.json") as file:
             self.hypernetwork_config = json.load(file)["Hypernetwork_config_3D"]
 
-        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 512)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(512, 256)
-        self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(256, 512)
-        self.relu3 = nn.ReLU()
-        self.fc4 = nn.Linear(512, self.hypernetwork_config["output_dim"], bias=False)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+
+        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 1024)
+        self.bn1 = nn.BatchNorm1d(1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.fc3 = nn.Linear(512, 512)
+        self.bn3 = nn.BatchNorm1d(512)
+        self.fc4 = nn.Linear(512, 1024)
+        self.bn4 = nn.BatchNorm1d(1024)
+        self.fc5 = nn.Linear(1024, self.hypernetwork_config["output_dim"])
+
         print(sum(p.numel() for p in self.parameters()))
 
     def forward(self, x):
-        x = self.relu1(self.fc1(x))
-        x = self.relu2(self.fc2(x))
-        x = self.relu3(self.fc3(x))
-        x = self.fc4(x)
+        x_1 = self.fc1(x)
+        x_1 = self.relu(x_1)
+        x_1 = self.dropout(x_1)
+        
+        x_2 = self.fc2(x_1)
+        x_2 = self.relu(x_2)
+        x_2 = self.dropout(x_2)
+        
+        x_3 = self.fc3(x_2)
+        x_3 = self.relu(x_3)
+        x_3 = self.dropout(x_3)
+        
+        x_4 = self.fc4(x_3)
+        x_4 = self.relu(x_4)
+        x_4 = self.dropout(x_4)
+
+        return self.fc5(x_4)
+    
+class HyperNetwork3D2(nn.Module):
+    def __init__(self, dropout_rate=0.5):
+        super(HyperNetwork3D2, self).__init__()
+        with open("config.json") as file:
+            self.hypernetwork_config = json.load(file)["Hypernetwork_config_3D"]
+        self.d_model=12
+        self.shared_output_dim = 64
+        self.class_embedding_dim=16
+        self.positional_encoding = PositionalEncoding(self.d_model)
+
+        self.label_embedding = nn.Embedding(10, self.class_embedding_dim)
+        self.dim = self.hypernetwork_config["input_dim"]
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_rate)
+
+        self.fc1 = nn.Linear(self.dim, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.fc2 = nn.Linear(self.dim + 256, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.fc3 = nn.Linear(self.dim + 2*256, 256)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.fc4 = nn.Linear(self.dim + 3*256, 256)
+        self.bn4 = nn.BatchNorm1d(256)
+        self.fc5 = nn.Linear(4*256, self.hypernetwork_config["output_dim"])
+
+        print(sum(p.numel() for p in self.parameters()))
+
+    def forward(self, x):
+        
+        x_1 = self.fc1(x)
+        x_1 = self.bn1(x_1)
+        x_1 = self.relu(x_1)
+        x_1 = self.dropout(x_1)
+        
+        x_2 = torch.cat((x, x_1), dim=1)
+        x_2 = self.fc2(x_2)
+        x_2 = self.bn2(x_2)
+        x_2 = self.relu(x_2)
+        x_2 = self.dropout(x_2)
+        
+        x_3 = torch.cat((x, x_1, x_2), dim=1)
+        x_3 = self.fc3(x_3)
+        x_3 = self.bn3(x_3)
+        x_3 = self.relu(x_3)
+        x_3 = self.dropout(x_3)
+        
+        x_4 = torch.cat((x, x_1, x_2, x_3), dim=1)
+        x_4 = self.fc4(x_4)
+        x_4 = self.bn4(x_4)
+        x_4 = self.relu(x_4)
+        x_4 = self.dropout(x_4)
+
+        x = torch.cat((x_1, x_2, x_3, x_4), dim=1)
+        x = self.fc5(x)
+        
         return x
     
 class SharpNet(nn.Module):
