@@ -268,39 +268,21 @@ class HyperNetwork3D(nn.Module):
         with open("config.json") as file:
             self.hypernetwork_config = json.load(file)["Hypernetwork_config_3D"]
 
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
-
-        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 1024)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.bn2 = nn.BatchNorm1d(512)
-        self.fc3 = nn.Linear(512, 512)
-        self.bn3 = nn.BatchNorm1d(512)
-        self.fc4 = nn.Linear(512, 1024)
-        self.bn4 = nn.BatchNorm1d(1024)
-        self.fc5 = nn.Linear(1024, self.hypernetwork_config["output_dim"])
+        self.fc1 = nn.Linear(self.hypernetwork_config["input_dim"], 512)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(512, 256)
+        self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(256, 256)
+        self.relu3 = nn.ReLU()
+        self.fc4 = nn.Linear(256, self.hypernetwork_config["output_dim"], bias=False)
 
         print(sum(p.numel() for p in self.parameters()))
 
     def forward(self, x):
-        x_1 = self.fc1(x)
-        x_1 = self.relu(x_1)
-        x_1 = self.dropout(x_1)
-        
-        x_2 = self.fc2(x_1)
-        x_2 = self.relu(x_2)
-        x_2 = self.dropout(x_2)
-        
-        x_3 = self.fc3(x_2)
-        x_3 = self.relu(x_3)
-        x_3 = self.dropout(x_3)
-        
-        x_4 = self.fc4(x_3)
-        x_4 = self.relu(x_4)
-        x_4 = self.dropout(x_4)
-
-        return self.fc5(x_4)
+        x = self.relu1(self.fc1(x))
+        x = self.relu2(self.fc2(x))
+        x = self.relu3(self.fc3(x))
+        return self.fc4(x)
     
 class HyperNetwork3D2(nn.Module):
     def __init__(self, dropout_rate=0.5):

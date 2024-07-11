@@ -140,12 +140,25 @@ class HyperNetworkTrainer:
         epochs = 5000
 
         def lr_lambda(epoch):
+
+            if epoch < 350:
+                return 1.0
+            elif epoch < 750:
+                return 1/6
+            else:
+                return 1/12
+
             return 1 - (0.9999 * epoch/epochs)
+
 
 
         if not self.load:
             optimizer = torch.optim.Adam(self.hypernetwork.parameters(), lr=0.00005, weight_decay=0.002)
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+            epochs = 2000
+
 
             for epoch in range(epochs):
                 start_time = time.time()
@@ -179,32 +192,29 @@ def main():
     hypernetwork = HyperNetwork3D()
     
     inr_trainer = INRTrainer3D(debug=True)
-    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_large.pth', override=True)
-    train_pairs, val_pairs = generate_pairs(256, 32, 32)
 
-    dataset = ObjectINRDataset(sMLP, inr_trainer, "ADL4CV/data/model_data/shrec_16", on_the_fly=False, device=device)
-    
-    outliers = []
-    for i in range(256):
-        if dataset[i][0].shape[0] != 252:
-            print(i, dataset[i][0].shape[0])
-            outliers.append(i)
+    hypernetwork_trainer = HyperNetworkTrainer(hypernetwork, sMLP, inr_trainer, save_path='ADL4CV/models/3D/hypernetwork_armadillo_Leon.pth', override=True)
+    train_pairs, val_pairs = generate_pairs(16, 8, 4)
 
-    print("Non conforming objects: ", outliers)
+    armadillo_train_idx = [54, 61, 201, 226, 260 , 279, 341, 344, 370,
+                         403, 457, 489, 522, 539, 558, 597]
 
-    def filter_outliers(list_of_lists, outliers):
-        filtered_lists = []
-        for sublist in list_of_lists:
-            if not any(item in outliers for item in sublist):
-                filtered_lists.append(sublist)
-        return filtered_lists
+    #armadillo_test_idx = [55, 138, 473, 574]
 
-    train_pairs = filter_outliers(train_pairs, outliers)
-    val_pairs = filter_outliers(val_pairs, outliers)
-    
-    hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=32)
-    
-    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_large.pth", map_location=torch.device(device)))
+    armadillo_combined_idx = [54, 61, 201, 226, 260 , 279, 341, 344, 370,
+                         403, 457, 489, 522, 539, 558, 597, 55, 138, 473, 574]
+
+    armadillo_pairs = [[x, y] for x in armadillo_combined_idx for y in armadillo_combined_idx]
+    random.seed(42)
+    random.shuffle(armadillo_pairs)
+
+    train_pairs = armadillo_pairs[:370]
+    val_pairs = armadillo_pairs[370:]
+
+    #test_pairs = [[x, y] for x in armadillo_test_idx for y in armadillo_test_idx]
+    #hypernetwork_trainer.train_hypernetwork(train_pairs, val_pairs, batch_size=32)
+
+    hypernetwork.load_state_dict(torch.load("ADL4CV/models/3D/hypernetwork_armadillo_Leon.pth", map_location=torch.device(device)))
 
     with open("config.json") as json_file:
                 json_file = json.load(json_file)
@@ -212,12 +222,12 @@ def main():
 
     model = sMLP(seed=42, INR_model_config=INR_model_config)
 
-    idx_1 , idx_2 = train_pairs[5]
+    idx_1 , idx_2 = val_pairs[5]
     print(idx_1, idx_2)
 
     model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_1}.pth", map_location=torch.device(device)))
     params_1 = flatten_model_weights(model)
-    model.load_state_dict(torch.load("ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
+    model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
     params_2 = flatten_model_weights(model)
     params_cat = torch.cat((params_2, params_1)).to(device)
 
@@ -225,11 +235,37 @@ def main():
 
     weights, biases = unflatten_weights(predicted_weights, model)
     
-    step = .01
+    step = .08
     scale_1 = 2
     scale_2 = 1
-    render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases)
+    #render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases)
+    train_objects = train_pairs[:5]
+    val_objects = val_pairs[:20]
+    for pair in train_objects:
+        idx_1, idx_2 = pair
+        model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_1}.pth", map_location=torch.device(device)))
+        params_1 = flatten_model_weights(model)
+        model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
+        params_2 = flatten_model_weights(model)
+        params_cat = torch.cat((params_2, params_1)).to(device)
 
+        predicted_weights = hypernetwork(params_cat).unsqueeze(0)
+        weights, biases = unflatten_weights(predicted_weights, model)
+
+        render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/train_{idx_1}_{idx_2}.obj")
+
+    for pair in val_objects:
+        idx_1, idx_2 = pair
+        model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_1}.pth", map_location=torch.device(device)))
+        params_1 = flatten_model_weights(model)
+        model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
+        params_2 = flatten_model_weights(model)
+        params_cat = torch.cat((params_2, params_1)).to(device)
+
+        predicted_weights = hypernetwork(params_cat).unsqueeze(0)
+        weights, biases = unflatten_weights(predicted_weights, model)
+
+        render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/val_{idx_1}_{idx_2}.obj")
 
 
 if __name__ == "__main__":
