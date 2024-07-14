@@ -9,7 +9,7 @@
     },
     "INR_trainer_config_2D": {
         "lr": 0.001,
-        "epochs": 5000,
+        "epochs": 10000,
         "weight_decay": 0.0005
     },
     "Hypernetwork_config_2D": {

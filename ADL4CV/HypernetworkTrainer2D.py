@@ -66,7 +66,7 @@ class HyperNetworkTrainer:
             raise FileExistsError(f"Model already exists at {self.save_path}. Use override=True to overwrite it.")
 
 
-    def process_batch(self, batch, criterion, epoch, debug=False, final=False):
+    def process_batch(self, batch, criterion, epoch, debug=False, final=False, batch_results = False):
         img_1_batch, label_1_batch, flat_weights_1_batch, img_2_batch, label_2_batch, flat_weights_2_batch = [b for b in batch]   # Move batch data to GPU
         concatenated_weights = torch.cat((flat_weights_1_batch, flat_weights_2_batch), dim=1)
         batch_size = img_1_batch.shape[0]
@@ -87,16 +87,21 @@ class HyperNetworkTrainer:
         loss = criterion(predictions_sharpnet.flatten(), intensities.flatten())
 
         if final:
-            actual_images = predictions_sharpnet.view(batch_size, height, width)
-            expected_images = img_concat
-    
-            results = []
-            for i in range(batch_size):
-                result = {
-                    "actual": actual_images[i, :, :].cpu().detach().numpy(),
-                    "expected": expected_images[i, :, :].cpu().detach().numpy()
-                }
-                results.append(result)
+            if batch_results:
+                output_images = predictions_sharpnet.view(batch_size, height, width)
+                gt_images = img_concat
+                results = [gt_images, output_images]
+            else:
+                actual_images = predictions_sharpnet.view(batch_size, height, width)
+                expected_images = img_concat
+        
+                results = []
+                for i in range(batch_size):
+                    result = {
+                        "actual": actual_images[i, :, :].cpu().detach().numpy(),
+                        "expected": expected_images[i, :, :].cpu().detach().numpy()
+                    }
+                    results.append(result)
         else:
             results = []
         return loss.mean(), results
@@ -115,13 +120,13 @@ class HyperNetworkTrainer:
         total_loss /= len(dataloader)
         return total_loss
 
-    def validate(self, dataloader, criterion, epoch, debug, final):
+    def validate(self, dataloader, criterion, epoch, debug, final, batch_results=False):
         self.hypernetwork.eval()
         total_loss = 0.0
 
         with torch.no_grad():
             for batch in dataloader:
-                batch_loss, results = self.process_batch(batch, criterion, epoch, debug=debug, final=final)
+                batch_loss, results = self.process_batch(batch, criterion, epoch, debug=debug, final=final, batch_results=batch_results)
                 total_loss += batch_loss
 
         total_loss /= len(dataloader)

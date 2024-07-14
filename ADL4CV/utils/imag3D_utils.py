@@ -21,7 +21,7 @@ def generate_coordinates(step, scale_x, scale_y, scale_z):
                    for z in range(int(2 * scale_z / step))]
     return torch.tensor(coordinates, dtype=torch.float32)
 
-def render_and_store_models(step, scale_x, scale_y, scale_z, model_path=None, weights=None, biases=None):
+def render_and_store_models(step, scale_x, scale_y, scale_z, model_path=None, weights=None, biases=None, save_path=None):
     with open("config.json") as json_file:
         json_file = json.load(json_file)
         INR_model_config = json_file["INR_model_config_3D"]
@@ -42,9 +42,12 @@ def render_and_store_models(step, scale_x, scale_y, scale_z, model_path=None, we
     
     mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
     N = scale_x / step
-    print(type(mesh.vertices))
+    print(len(mesh.vertices))
     mesh.vertices = (mesh.vertices / N - np.array([[1, 2, 1]]))
-    mesh.export(f"./sdf_pipeline.obj")
+    if save_path is not None:
+        mesh.export(save_path)
+    else:
+        mesh.export(f"./sdf_pipeline.obj")
 
 def normalize(coords):
     coords -= np.mean(coords, axis=0, keepdims=True)
@@ -55,3 +58,49 @@ def normalize(coords):
     return coords
 
 
+def generate_merged_gt_3D(obj_idx_1, obj_idx_2, offsets, output_file_path):
+    vertices = []
+    faces = []
+    x_1, y_1, z_1, x_2, y_2, z_2 = offsets
+
+    with open(f"ADL4CV/data/gt_data/shrec_16_original/armadillo/train/T{obj_idx_1}.obj", 'r') as file:
+        for line in file:
+            if line.startswith('v '):
+                parts = line.split()
+                vertex = list(map(float, parts[1:4]))
+                vertex[0:3] = np.array(vertex) #+ np.array([x_1, y_1, z_1])
+                vertices.append(vertex)
+            elif line.startswith('f '):
+                parts = line.split()
+                face = []
+                for part in parts[1:]:
+                    face.append(int(part.split('/')[0]))
+                faces.append(face)
+        n_vertex_1 = len(vertices)
+
+    vertices = (normalize(vertices) + np.array([[x_1, y_1, z_1]])).tolist()
+
+    with open(f"ADL4CV/data/gt_data/shrec_16_original/armadillo/train/T{obj_idx_2}.obj", 'r') as file:
+        for line in file:
+            if line.startswith('v '):
+                parts = line.split()
+                vertex = list(map(float, parts[1:4]))
+                vertex[0:3] = np.array(vertex) #+ np.array([x_2, y_2, z_2])
+                vertices.append(vertex)
+            elif line.startswith('f '):
+                parts = line.split()
+                face = []
+                for part in parts[1:]:
+                    face.append(int(part.split('/')[0]) + n_vertex_1)
+                faces.append(face)
+
+    vertices[n_vertex_1:] = (normalize(vertices[n_vertex_1:]) + np.array([[x_2, y_2, z_2]])).tolist()
+
+    #vertices = np.array(vertices) * 10/9
+
+    with open(output_file_path, 'w') as output_file:
+        for vertex in vertices:
+            output_file.write("v {0} {1} {2}\n".format(vertex[0],vertex[1],vertex[2]))
+
+        for face in faces:
+            output_file.write("f {0} {1} {2}\n".format(face[0],face[1],face[2]))              

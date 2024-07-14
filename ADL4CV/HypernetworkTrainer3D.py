@@ -148,8 +148,6 @@ class HyperNetworkTrainer:
             else:
                 return 1/12
 
-            return 1 - (0.9999 * epoch/epochs)
-
 
 
         if not self.load:
@@ -235,24 +233,24 @@ def main():
 
     weights, biases = unflatten_weights(predicted_weights, model)
     
-    step = .08
+    step = .05
     scale_1 = 2
     scale_2 = 1
     #render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases)
     train_objects = train_pairs[:5]
-    val_objects = val_pairs[:20]
+    val_objects = val_pairs
     for pair in train_objects:
         idx_1, idx_2 = pair
         model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_1}.pth", map_location=torch.device(device)))
         params_1 = flatten_model_weights(model)
         model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
         params_2 = flatten_model_weights(model)
-        params_cat = torch.cat((params_2, params_1)).to(device)
+        params_cat = torch.cat((params_1, params_2)).to(device)
 
         predicted_weights = hypernetwork(params_cat).unsqueeze(0)
         weights, biases = unflatten_weights(predicted_weights, model)
 
-        render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/train_{idx_1}_{idx_2}.obj")
+        render_and_store_models(step, scale_2, scale_1, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/train_{idx_1}_{idx_2}.obj")
 
     for pair in val_objects:
         idx_1, idx_2 = pair
@@ -260,12 +258,12 @@ def main():
         params_1 = flatten_model_weights(model)
         model.load_state_dict(torch.load(f"ADL4CV/data/model_data/shrec_16/T{idx_2}.pth", map_location=torch.device(device)))
         params_2 = flatten_model_weights(model)
-        params_cat = torch.cat((params_2, params_1)).to(device)
+        params_cat = torch.cat((params_1, params_2)).to(device)
 
         predicted_weights = hypernetwork(params_cat).unsqueeze(0)
         weights, biases = unflatten_weights(predicted_weights, model)
 
-        render_and_store_models(step, scale_1, scale_2, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/val_{idx_1}_{idx_2}.obj")
+        render_and_store_models(step, scale_2, scale_1, scale_2, model_path=None, weights=weights, biases=biases, save_path=f"ADL4CV/evaluation/pairs/val_{idx_1}_{idx_2}.obj")
 
 
 if __name__ == "__main__":

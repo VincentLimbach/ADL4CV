@@ -36,6 +36,7 @@ def train_INRpair2D(dataset, pair_index, offsets, model_cls, seed, save=False, s
 
     losses = []
 
+    t0 = time.time()
     epochs = INR_trainer_config["epochs"]
     for epoch in range(epochs):
         optimizer.zero_grad()
@@ -80,14 +81,16 @@ def INRpair_loss(pairs, offsets):
         losses.append(loss)
     return losses
 
-#val_losses = INRpair_loss(weak_val_pairs, offsets=offsets_weak_val)
+#val_losses = INRpair_loss(weak_val_pairs[:2], offsets=offsets_weak_val)
 #np.savetxt('ADL4CV/evaluation/weak_val_losses.txt', np.array(val_losses), delimiter=',')
 
-train_losses = np.loadtxt("ADL4CV/evaluation/train_losses.txt", delimiter=",")
+train_losses = np.loadtxt("ADL4CV/evaluation/weak_val_losses.txt", delimiter=",")
 
 ci = 1.96 * np.std(train_losses, axis=0)/np.sqrt(50)
 
-plt.rcParams["figure.figsize"] = (5,5) #set figure size
+plt.rcParams["figure.figsize"] = (4, 3) #set figure size
+plt.rcParams['axes.labelsize'] = 20
+plt.rcParams['xtick.labelsize'] = 12
 
 x = np.arange(10000)
 mean = np.mean(train_losses, axis=0)
@@ -97,8 +100,9 @@ mean = np.mean(train_losses, axis=0)
 plt.plot(x, mean)
 plt.fill_between(x, (mean-ci), (mean+ci), color='b', alpha=.1)
 
-threshold = 0.005
+threshold = 0.0043
 loss_intercept = np.min(np.where(mean < threshold)[0])
+print(loss_intercept)
 y_min, y_max = plt.ylim()
 x_min, x_max = plt.xlim()
 
