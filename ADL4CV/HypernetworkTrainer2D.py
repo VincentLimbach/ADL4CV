@@ -75,7 +75,7 @@ class HyperNetworkTrainer:
                 )
                 self.sharpnet.load_state_dict(
                     torch.load(
-                        "ADL4CV/models/2D/hypernetwork_sharper.pth",
+                        "ADL4CV/models/2D/finalHypernetworkSharpener2D.pth",
                         map_location=torch.device("cpu"),
                     )
                 )
@@ -268,7 +268,7 @@ class HyperNetworkTrainer:
         torch.save(self.hypernetwork.state_dict(), self.save_path)
         torch.save(
             self.sharpnet.state_dict(),
-            "ADL4CV/models/2D/finalHypernetworkSharpener.pth",
+            "ADL4CV/models/2D/finalHypernetworkSharpener2D.pth",
         )
 
         print(
@@ -309,7 +309,7 @@ def main():
         hypernetwork,
         sMLP,
         inr_trainer,
-        save_path="ADL4CV/models/2D/finalHypernetwork2D.pth",
+        save_path="ADL4CV/models/2D/finalHypernetworkBase2D.pth",
         load=True,
     )
     train_pairs, weak_val_pairs = generate_pairs(256, 64, 8, seed=42)

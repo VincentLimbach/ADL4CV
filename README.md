@@ -33,8 +33,14 @@ First, navigate to your project directory. Then, follow these steps:
   ```
 
 - **Build the Project** using `python -m build`:
+
   ```sh
   python -m build
+  ```
+
+- **Add Repository to PATH**:
+  ```sh
+  export PYTHONPATH=.
   ```
 
 ## Usage Guide
@@ -42,14 +48,17 @@ First, navigate to your project directory. Then, follow these steps:
 The content of the project is distributed as follows:
 
 - **/architectures** contains the Hypernetworks and NeuralFields files and classes
-- **/data** contains the dataset classes. Furthermore, it  and preprocessing scripts 
-- **3D Hypernetwork Trainer**: `ADL4CV/HypernetworkTrainer3D.py`
+- **/data** contains the dataset classes. Furthermore, it and preprocessing scripts
+- **/evaluation**: contains the scripts to create the figures
+- **/models**: contains the pretrained models. We couldn't include the 3D due to size constraints
+- **/utils**: contain files with reuable functionality
 
 ### Running the Scripts
 
 You can execute these scripts from the command line without any arguments to use the default values as described in the report. The scripts will calculate and store the final validation prediction in the `ADL4CV/evaluation/latest_run` directory.
 
 - To run the 2D Hypernetwork Trainer:
+
   ```sh
   python ADL4CV/HypernetworkTrainer2D.py
   ```
