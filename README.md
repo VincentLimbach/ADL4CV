@@ -39,9 +39,10 @@ First, navigate to your project directory. Then, follow these steps:
 
 ## Usage Guide
 
-The main functionalities of the project are located in the following scripts:
+The content of the project is distributed as follows:
 
-- **2D Hypernetwork Trainer**: `ADL4CV/HypernetworkTrainer2D.py`
+- **/architectures** contains the Hypernetworks and NeuralFields files and classes
+- **/data** contains the dataset classes. Furthermore, it  and preprocessing scripts 
 - **3D Hypernetwork Trainer**: `ADL4CV/HypernetworkTrainer3D.py`
 
 ### Running the Scripts
