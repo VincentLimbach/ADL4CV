@@ -1,4 +1,3 @@
-````markdown
 # Project Overview
 
 This repository contains the results of the joint research by Vincent Limbach and Leon Stadelmann conducted within the ADL4CV lecture. The project explores the creation of a merged neural field for object ensembles from the neural fields of individual objects. Our research defines two relevant generalization tasks and demonstrates that our approach successfully generalizes to unseen combinations and neural fields in 2D. For 3D, we show that while merging unseen combinations is feasible, handling unseen neural fields remains an open problem. This repository contains the relevant code from the final state of our internal project.
@@ -53,7 +52,6 @@ You can execute these scripts from the command line without any arguments to use
   ```sh
   python ADL4CV/HypernetworkTrainer2D.py
   ```
-````
 
 - To run the 3D Hypernetwork Trainer:
   ```sh
