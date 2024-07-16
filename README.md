@@ -59,21 +59,6 @@ You can execute these scripts from the command line without any arguments to use
   python ADL4CV/HypernetworkTrainer3D.py
   ```
 
-### Customizing Hyperparameters
-
-You can replace the default hyperparameters via the command line. To see an overview of the available options, use the `-h` flag:
-
-- For the 2D Hypernetwork Trainer:
-
-  ```sh
-  python ADL4CV/HypernetworkTrainer2D.py -h
-  ```
-
-- For the 3D Hypernetwork Trainer:
-  ```sh
-  python ADL4CV/HypernetworkTrainer3D.py -h
-  ```
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
