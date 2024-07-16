@@ -12,7 +12,6 @@ ADL4CV.egg-info/top_level.txt
 ADL4CV/architectures/Hypernetworks.py
 ADL4CV/architectures/INRs.py
 ADL4CV/architectures/__init__.py
-ADL4CV/architectures/temp.py
 ADL4CV/data/INR_trainer2D.py
 ADL4CV/data/INR_trainer3D.py
 ADL4CV/data/__init__.py
@@ -24,7 +23,6 @@ ADL4CV/evaluation/calculate_gt_3D.py
 ADL4CV/evaluation/make_grids.py
 ADL4CV/evaluation/plot_compute_acceleration.py
 ADL4CV/utils/__init__.py
-ADL4CV/utils/extrapolate_script.py
 ADL4CV/utils/imag2D_utils.py
 ADL4CV/utils/imag3D_utils.py
 ADL4CV/utils/model_utils.py
